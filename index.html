@@ -119,7 +119,7 @@ footer a{color:var(--dim)}
     <div class="ports">
       <span class="pill">macOS</span>
       <span class="pill">Python 3, stdlib only</span>
-      <span class="pill">MIT</span>
+      <span class="pill">MIT or GPL-3.0, per tool</span>
       <span class="pill">no telemetry</span>
     </div>
   </div>
@@ -219,7 +219,7 @@ footer a{color:var(--dim)}
     <div class="layer">
       <p class="layer-name">what moves between</p>
       <div class="tools">
-        <a class="tool" href="https://github.com/nerln/claude-codex-bridge">
+        <a class="tool" href="https://github.com/eugenionerelli/claude-codex-bridge">
           <span class="n">agent-switch <small>transfer</small></span>
           <p>Moves a live conversation from Claude to Codex and back, as a real resumed
              session, not a prompt asking the next model to reconstruct the work.</p></a>
@@ -270,19 +270,21 @@ footer a{color:var(--dim)}
     <p>Each one stands alone and none of them needs the others. Start with the two that
     pay for themselves the first day.</p>
 <pre><span class="muted"># see what is running on your behalf, right now</span>
-git clone https://github.com/nerln/faro &amp;&amp; ln -s "$PWD/faro/bin/faro" ~/.local/bin/faro
+pipx install git+https://github.com/nerln/faro
 faro
 
 <span class="muted"># then the office that watches the whole port</span>
-git clone https://github.com/nerln/capitaneria
-ln -s "$PWD/capitaneria/bin/capitaneria" ~/.local/bin/capitaneria
+pipx install git+https://github.com/nerln/capitaneria
 capitaneria</pre>
+    <p class="muted">The same line works for boa, plancia, dogana, paratia and vedetta.
+    varo is not a command: it is a hook, a skill and an auditor agent, so it is installed
+    by wiring it into <code>~/.claude</code> rather than by pip.</p>
   </div>
 </section>
 
 <footer>
   <div class="wrap">
-    <a href="https://github.com/nerln">Eugenio Nerelli</a> · MIT ·
+    <a href="https://github.com/nerln">Eugenio Nerelli</a> · MIT or GPL-3.0, see each repo ·
     every figure on this page is a measurement, not an estimate
   </div>
 </footer>
