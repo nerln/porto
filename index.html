@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Porto — a control plane for agents on one machine</title>
+<meta name="description" content="Nine small tools that stop many AI coding agents from colliding on one laptop. Your agents are the ships. You are the port.">
+<meta property="og:title" content="Porto — a control plane for agents on one machine">
+<meta property="og:description" content="Your agents are the ships. You are the port.">
+<style>
+:root{
+  --ink:#0b0f14; --paper:#f7f5f1; --dim:#5b6672; --line:#dcd7cf;
+  --accent:#0a5c5c; --warn:#8a4b16; --card:#fffdfa;
+  --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif;
+}
+@media (prefers-color-scheme:dark){
+  :root{ --ink:#e8e6e1; --paper:#0d1117; --dim:#8b949e; --line:#232a33;
+         --accent:#4fd1c5; --warn:#e0a86a; --card:#131920; }
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0; background:var(--paper); color:var(--ink);
+  font-family:var(--sans); font-size:17px; line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:940px;margin:0 auto;padding:0 24px}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid transparent}
+a:hover{border-bottom-color:currentColor}
+code,.mono{font-family:var(--mono);font-size:.92em}
+
+/* ---------- hero ---------- */
+header{padding:104px 0 72px;border-bottom:1px solid var(--line)}
+.eyebrow{
+  font-family:var(--mono);font-size:.74rem;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--dim);margin:0 0 26px
+}
+h1{
+  font-size:clamp(2.3rem,6.2vw,4rem);line-height:1.04;margin:0 0 22px;
+  letter-spacing:-.03em;font-weight:600;max-width:16ch
+}
+h1 em{font-style:normal;color:var(--accent)}
+.lede{font-size:clamp(1.05rem,2.3vw,1.3rem);color:var(--dim);max-width:60ch;margin:0}
+.ports{display:flex;gap:10px;flex-wrap:wrap;margin-top:34px}
+.pill{
+  font-family:var(--mono);font-size:.78rem;padding:5px 11px;
+  border:1px solid var(--line);border-radius:999px;color:var(--dim)
+}
+
+/* ---------- sections ---------- */
+section{padding:72px 0;border-bottom:1px solid var(--line)}
+h2{
+  font-size:.78rem;font-family:var(--mono);letter-spacing:.16em;
+  text-transform:uppercase;color:var(--dim);margin:0 0 30px;font-weight:500
+}
+h3{font-size:1.35rem;margin:0 0 12px;letter-spacing:-.015em;font-weight:600}
+p{max-width:66ch}
+.big{font-size:1.32rem;line-height:1.5;max-width:60ch;letter-spacing:-.012em}
+
+/* ---------- the incident ---------- */
+.figures{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:1px;
+  background:var(--line);border:1px solid var(--line);margin-top:38px}
+.fig{background:var(--card);padding:22px 20px}
+.fig b{display:block;font-family:var(--mono);font-size:1.65rem;letter-spacing:-.03em;
+  font-weight:600;margin-bottom:5px}
+.fig span{font-size:.86rem;color:var(--dim);line-height:1.45;display:block}
+
+/* ---------- the fleet ---------- */
+.layer{margin-bottom:34px}
+.layer-name{
+  font-family:var(--mono);font-size:.76rem;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--warn);margin:0 0 14px;display:flex;align-items:center;gap:12px
+}
+.layer-name::after{content:"";flex:1;height:1px;background:var(--line)}
+.tools{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+.tool{
+  background:var(--card);border:1px solid var(--line);border-radius:10px;
+  padding:18px 20px;display:block;color:inherit;transition:border-color .15s,transform .15s
+}
+.tool:hover{border-color:var(--accent);transform:translateY(-2px)}
+.tool .n{font-family:var(--mono);font-weight:600;font-size:1.02rem;color:var(--accent);
+  display:flex;align-items:baseline;gap:9px}
+.tool .n small{font-family:var(--sans);font-weight:400;font-size:.72rem;color:var(--dim);
+  letter-spacing:.02em}
+.tool p{margin:9px 0 0;font-size:.93rem;color:var(--dim);max-width:none;line-height:1.5}
+
+/* ---------- stories ---------- */
+.story{border-left:2px solid var(--line);padding:2px 0 2px 24px;margin:0 0 34px}
+.story h3{font-size:1.08rem;margin-bottom:8px}
+.story p{font-size:.97rem;color:var(--dim);margin:0}
+.story p em{font-style:normal;color:var(--ink)}
+
+pre{
+  background:var(--card);border:1px solid var(--line);border-radius:10px;
+  padding:18px 20px;overflow-x:auto;font-family:var(--mono);font-size:.86rem;
+  line-height:1.65;margin:22px 0 0
+}
+.muted{color:var(--dim)}
+footer{padding:56px 0 80px;color:var(--dim);font-size:.9rem}
+footer a{color:var(--dim)}
+@media(max-width:600px){
+  header{padding:64px 0 48px} section{padding:52px 0}
+  body{font-size:16px}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <p class="eyebrow">Porto · a control plane for coding agents</p>
+    <h1>Your agents are the ships. <em>You are the port.</em></h1>
+    <p class="lede">
+      Nine small tools that stop many AI coding agents from colliding on one laptop.
+      No daemons, no database, no dependencies past Python 3. Every one of them was
+      written the day something actually broke.
+    </p>
+    <div class="ports">
+      <span class="pill">macOS</span>
+      <span class="pill">Python 3, stdlib only</span>
+      <span class="pill">MIT</span>
+      <span class="pill">no telemetry</span>
+    </div>
+  </div>
+</header>
+
+<section>
+  <div class="wrap">
+    <h2>The problem</h2>
+    <p class="big">
+      Four agents were open on a 16 GB laptop, one per project. Each of them decided,
+      reasonably and independently, that now was a good time to start something big.
+      None of them could see the others. Nothing in that story is a bug — sessions are
+      isolated by design. It only means that on one machine, <strong>nobody is
+      counting</strong>.
+    </p>
+    <div class="figures">
+      <div class="fig"><b>14.3<span style="font-size:.6em"> GB</span></b>
+        <span>of swap in use, with nine live sessions, before anything looked wrong</span></div>
+      <div class="fig"><b>10.5<span style="font-size:.6em"> h</span></b>
+        <span>a 5 GB job sat in the queue. It ran in 63 seconds once there was room</span></div>
+      <div class="fig"><b>20<span style="font-size:.6em"> h</span></b>
+        <span>the oldest orphaned preview server, holding a port nobody would free</span></div>
+      <div class="fig"><b>3.5<span style="font-size:.6em"> M</span></b>
+        <span>output tokens spent in one day, across sessions nobody was summing</span></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>The fleet</h2>
+    <p style="margin-bottom:44px">
+      Every time several agents share a machine, there is a resource nobody is counting.
+      Each tool was born the day one of them ran out. None of them is an assistant:
+      they count, they limit, they show. <strong>The work stays with the agents.</strong>
+    </p>
+
+    <div class="layer">
+      <p class="layer-name">what comes in</p>
+      <div class="tools">
+        <a class="tool" href="https://github.com/nerln/vedetta">
+          <span class="n">vedetta <small>lookout</small></span>
+          <p>Internet reach for agents, without giving the internet a way to give the
+             agent orders. 17 sources, no API keys, no dependencies.</p></a>
+        <a class="tool" href="https://github.com/nerln/dogana">
+          <span class="n">dogana <small>customs</small></span>
+          <p>A skill is not a library: it is text the agent reads and follows. This is
+             what inspects and quarantines the ones written by strangers.</p></a>
+      </div>
+    </div>
+
+    <div class="layer">
+      <p class="layer-name">what is held back</p>
+      <div class="tools">
+        <a class="tool" href="https://github.com/nerln/paratia">
+          <span class="n">paratia <small>bulkhead</small></span>
+          <p>Files an agent cannot read. Not a line in a prompt asking it not to —
+             a deny list lives where the instructions live.</p></a>
+        <a class="tool" href="https://github.com/nerln/varo">
+          <span class="n">varo <small>launch</small></span>
+          <p>Ships static sites and checks the live copy, not the folder. Its auditor is
+             held read-only by the harness, not by a sentence in its description.</p></a>
+      </div>
+    </div>
+
+    <div class="layer">
+      <p class="layer-name">what gets spent</p>
+      <div class="tools">
+        <a class="tool" href="https://github.com/nerln/rada">
+          <span class="n">rada <small>anchorage</small></span>
+          <p>An admission queue for heavy jobs. A model decides who goes first, because
+             arrival order cannot tell a test someone is waiting for from a nightly
+             re-index.</p></a>
+        <a class="tool" href="https://github.com/nerln/faro">
+          <span class="n">faro <small>lighthouse</small></span>
+          <p>One board for everything running in the background, in six layers, each read
+             from the source that owns it. No daemon: a panel that becomes one more thing
+             to watch has already failed.</p></a>
+      </div>
+    </div>
+
+    <div class="layer">
+      <p class="layer-name">what gets said</p>
+      <div class="tools">
+        <a class="tool" href="https://github.com/nerln/boa">
+          <span class="n">boa <small>mooring buoy</small></span>
+          <p>The blackboard every session sees, where the models write on purpose instead
+             of a collector inferring intent from traces. What arrives from it is data,
+             never instruction.</p></a>
+        <a class="tool" href="https://github.com/nerln/plancia">
+          <span class="n">plancia <small>bridge</small></span>
+          <p>One board for the work you do with AI. Claude Code and Codex already write
+             down everything they do; nothing read them together.</p></a>
+      </div>
+    </div>
+
+    <div class="layer">
+      <p class="layer-name">what moves between</p>
+      <div class="tools">
+        <a class="tool" href="https://github.com/nerln/claude-codex-bridge">
+          <span class="n">agent-switch <small>transfer</small></span>
+          <p>Moves a live conversation from Claude to Codex and back, as a real resumed
+             session, not a prompt asking the next model to reconstruct the work.</p></a>
+        <a class="tool" href="https://github.com/nerln/capitaneria">
+          <span class="n">capitaneria <small>harbour master</small></span>
+          <p>The office you look at first: which tools are reachable, which have something
+             running, which have uncommitted work. Opens and closes the ones with a face.</p></a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Three things they found</h2>
+
+    <div class="story">
+      <h3>An orphan is not necessarily sick</h3>
+      <p>The first rule for reclaiming abandoned servers was <em>the parent is gone</em>.
+      It proves less than it looks like: a session that starts a server from a shell loses
+      the shell immediately, and the server is reparented while the session is alive and
+      using it. Without a fourth test, faro would have closed a server that three live
+      sessions were using.</p>
+    </div>
+
+    <div class="story">
+      <h3>Never date a scheduled job by its log</h3>
+      <p>Two jobs looked broken and neither was. One fires every minute and had
+      <em>1083 runs</em> against a log untouched for fourteen hours; the other had an empty
+      stderr from five days earlier and had run three hours before. Both write only when
+      they act. launchd counts the runs, so that is the number to show.</p>
+    </div>
+
+    <div class="story">
+      <h3>The frame turned on its author</h3>
+      <p>boa wraps everything it delivers in a notice saying the text is not from the user.
+      When the session that wrote that notice later sent a message beginning <em>"on behalf
+      of Eugenio, who is asleep"</em>, the receiving session refused it and quoted the
+      notice back. A defence that stops the person who wrote it is the only kind that has
+      demonstrated it exists.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Getting them</h2>
+    <p>Each one stands alone and none of them needs the others. Start with the two that
+    pay for themselves the first day.</p>
+<pre><span class="muted"># see what is running on your behalf, right now</span>
+git clone https://github.com/nerln/faro &amp;&amp; ln -s "$PWD/faro/bin/faro" ~/.local/bin/faro
+faro
+
+<span class="muted"># then the office that watches the whole port</span>
+git clone https://github.com/nerln/capitaneria
+ln -s "$PWD/capitaneria/bin/capitaneria" ~/.local/bin/capitaneria
+capitaneria</pre>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    Built by <a href="https://github.com/nerln">Eugenio Nerelli</a> on one 16 GB MacBook,
+    mostly on the days it stopped responding. Every number on this page was measured on
+    that machine, not estimated.
+  </div>
+</footer>
+
+</body>
+</html>
