@@ -118,7 +118,7 @@ footer a{color:var(--dim)}
     </p>
     <div class="ports">
       <span class="pill">macOS</span>
-      <span class="pill">Python 3, stdlib only</span>
+      <span class="pill">Python 3.11+, stdlib only</span>
       <span class="pill">MIT or GPL-3.0, per tool</span>
       <span class="pill">no telemetry</span>
     </div>
@@ -276,9 +276,15 @@ faro
 <span class="muted"># then the office that watches the whole port</span>
 pipx install git+https://github.com/nerln/capitaneria
 capitaneria</pre>
-    <p class="muted">The same line works for boa, plancia, dogana, paratia and vedetta.
-    varo is not a command: it is a hook, a skill and an auditor agent, so it is installed
-    by wiring it into <code>~/.claude</code> rather than by pip.</p>
+    <p class="muted">The same line works for boa, plancia, dogana, paratia and vedetta,
+    or <code>install.sh</code> in this repo takes all seven at once. varo is not a command:
+    it is a hook, a skill and an auditor agent, so it is installed by wiring it into
+    <code>~/.claude</code> rather than by pip.</p>
+    <p class="muted">Check what pipx builds on before you start:
+    <code>pipx environment --value PIPX_DEFAULT_PYTHON</code>. The Python that ships with
+    macOS is 3.9, and <code>pip install --user pipx</code> will happily bind pipx to it,
+    after which every one of these fails the same way. That is measured, not predicted:
+    it is how the first install attempt went.</p>
   </div>
 </section>
 
