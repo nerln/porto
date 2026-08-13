@@ -63,18 +63,17 @@ EOF
   exit 1
 fi
 
-# pipx builds each venv with the interpreter it was installed under, and every
-# tool here needs 3.10 or newer. Installing pipx with the python that ships with
-# macOS gets you 3.9, and then all seven fail one after another with the same
-# message about a different Python. Asked once, up front, so that arrives as one
-# sentence instead of seven stack traces.
+# pipx builds each venv with the interpreter it was installed under. The port
+# standardises its full install on Python 3.11+: without it, paratia cannot be
+# installed and the suite remains incomplete. Ask once, before touching the
+# machine, so that failure arrives as one useful sentence.
 PIPX_PYTHON="$(pipx environment --value PIPX_DEFAULT_PYTHON 2>/dev/null || true)"
 if [ -n "$PIPX_PYTHON" ] && [ -x "$PIPX_PYTHON" ]; then
-  if ! "$PIPX_PYTHON" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)'; then
+  if ! "$PIPX_PYTHON" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)'; then
     cat >&2 <<EOF
 pipx builds its environments with $PIPX_PYTHON,
-which is $("$PIPX_PYTHON" -V 2>&1). These tools need Python 3.10 or newer, so every
-one of them would fail with the same message.
+which is $("$PIPX_PYTHON" -V 2>&1). The complete port needs Python 3.11 or newer;
+with this interpreter, paratia cannot be installed.
 
 Point pipx at a newer interpreter and try again:
 

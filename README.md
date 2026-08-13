@@ -2,8 +2,10 @@
 
 The landing page for the suite: https://nerln.github.io/porto
 
-One self-contained HTML file, no build step, no dependencies, no external requests.
-Every number on it was measured on the machine, not estimated.
+A static HTML/CSS/JavaScript site with no build step and no external requests.
+The page uses a vendored copy of GSAP for small SVG choreographies and a custom
+Canvas 2D spring system for its harbour. Every number on it was measured on the
+machine, not estimated.
 
 `install.sh` installs the seven tools of the suite that ship as commands, each one
 on its own, and names the ones that did not install instead of finishing quietly.

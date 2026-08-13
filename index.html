@@ -3,551 +3,329 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Porto — a control plane for agents on one machine</title>
-<meta name="description" content="Nine small tools that stop many AI coding agents from colliding on one laptop, and the office that watches them. Your agents are the ships. You are the port.">
-<meta property="og:title" content="Porto — a control plane for agents on one machine">
+<title>Porto — one machine, many coding agents</title>
+<meta name="description" content="Nine small tools and one harbour office for coding agents sharing a machine. Your agents are the ships. You are the port.">
+<meta name="theme-color" content="#f1ede3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#071c20" media="(prefers-color-scheme: dark)">
+<meta property="og:title" content="Porto — one machine, many coding agents">
 <meta property="og:description" content="Your agents are the ships. You are the port.">
-<style>
-:root{
-  --ink:#0b0f14; --paper:#f7f5f1; --dim:#5b6672; --line:#dcd7cf;
-  --accent:#0a5c5c; --warn:#8a4b16; --card:#fffdfa;
-  --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
-  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif;
-}
-@media (prefers-color-scheme:dark){
-  :root{ --ink:#e8e6e1; --paper:#0d1117; --dim:#8b949e; --line:#232a33;
-         --accent:#4fd1c5; --warn:#e0a86a; --card:#131920; }
-}
-*{box-sizing:border-box}
-html{-webkit-text-size-adjust:100%}
-body{
-  margin:0; background:var(--paper); color:var(--ink);
-  font-family:var(--sans); font-size:17px; line-height:1.6;
-  -webkit-font-smoothing:antialiased;
-}
-.wrap{max-width:940px;margin:0 auto;padding:0 24px}
-a{color:var(--accent);text-decoration:none;border-bottom:1px solid transparent}
-a:hover{border-bottom-color:currentColor}
-code,.mono{font-family:var(--mono);font-size:.92em}
-
-/* ---------- hero ---------- */
-header{padding:104px 0 72px; border-bottom:1px solid var(--line); position:relative}
-/* The surface. The header's bottom edge was always a hairline; now it is the
-   waterline, and everything below it is under water. With script off the path
-   is the straight line it has always been, so nothing is missing. */
-.pelo{
-  position:absolute; left:0; right:0; bottom:-14px; height:28px; width:100%;
-  overflow:visible; pointer-events:none; z-index:1;
-}
-.pelo path{fill:none; stroke:var(--accent); stroke-width:1.4; opacity:.55; vector-effect:non-scaling-stroke}
-.pelo .sotto{stroke:var(--line); opacity:.9}
-.eyebrow{
-  font-family:var(--mono);font-size:.74rem;letter-spacing:.18em;
-  text-transform:uppercase;color:var(--dim);margin:0 0 26px
-}
-h1{
-  font-size:clamp(2.3rem,6.2vw,4rem);line-height:1.04;margin:0 0 22px;
-  letter-spacing:-.03em;font-weight:600;max-width:16ch
-}
-h1 em{font-style:normal;color:var(--accent)}
-.lede{font-size:clamp(1.05rem,2.3vw,1.3rem);color:var(--dim);max-width:60ch;margin:0}
-.ports{display:flex;gap:10px;flex-wrap:wrap;margin-top:34px}
-.pill{
-  font-family:var(--mono);font-size:.78rem;padding:5px 11px;
-  border:1px solid var(--line);border-radius:999px;color:var(--dim)
-}
-
-/* ---------- sections ---------- */
-section{padding:72px 0;border-bottom:1px solid var(--line)}
-h2{
-  font-size:.78rem;font-family:var(--mono);letter-spacing:.16em;
-  text-transform:uppercase;color:var(--dim);margin:0 0 30px;font-weight:500
-}
-h3{font-size:1.35rem;margin:0 0 12px;letter-spacing:-.015em;font-weight:600}
-p{max-width:66ch}
-.big{font-size:1.32rem;line-height:1.5;max-width:60ch;letter-spacing:-.012em}
-
-/* ---------- the incident ---------- */
-.figures{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:1px;
-  background:var(--line);border:1px solid var(--line);margin-top:38px}
-.fig{background:var(--card);padding:22px 20px;position:relative;overflow:hidden}
-/* The waterline beside each sounding. This is what floats; the number never
-   moves, because a measurement that trembles is just harder to read. */
-.battigia{
-  position:absolute; left:0; right:0; bottom:14px; height:1px;
-  background:linear-gradient(to right, transparent, var(--accent) 18%, var(--accent) 82%, transparent);
-  opacity:.34; will-change:transform;
-}
-.fig b{display:block;font-family:var(--mono);font-size:1.65rem;letter-spacing:-.03em;
-  font-weight:600;margin-bottom:5px}
-.fig span{font-size:.86rem;color:var(--dim);line-height:1.45;display:block}
-
-/* ---------- the fleet ---------- */
-.layer{margin-bottom:34px}
-.layer-name{
-  font-family:var(--mono);font-size:.76rem;letter-spacing:.14em;text-transform:uppercase;
-  color:var(--warn);margin:0 0 14px;display:flex;align-items:center;gap:12px
-}
-.layer-name::after{content:"";flex:1;height:1px;background:var(--line)}
-
-/* The channel. Five layers were five lists; they are one descent, and the page
-   said so in words -- what comes in, what is held back, what gets spent, what
-   gets said, what moves between -- without ever drawing it. One unbroken line
-   runs the whole fleet and every layer is a station on it, numbered in order.
-   It is a hairline and a two-digit number: nothing here needs script. */
-@media(min-width:760px){
-  .fleet .layer{position:relative; padding-left:44px}
-  .fleet .layer::before{
-    content:""; position:absolute; left:11px; top:14px; bottom:-34px;
-    width:1px; background:var(--line);
-  }
-  .fleet .layer:last-child::before{bottom:auto; height:26px}
-  .fleet .layer-name{position:static}
-  .fleet .layer-name::before{
-    content:attr(data-stazione);
-    position:absolute; left:0; top:4px; width:23px; height:23px;
-    display:flex; align-items:center; justify-content:center;
-    font-size:.6rem; letter-spacing:.02em; color:var(--dim);
-    background:var(--paper); border:1px solid var(--line); border-radius:50%;
-  }
-  .fleet .layer:hover .layer-name::before,
-  .fleet .layer:focus-within .layer-name::before{
-    color:var(--accent); border-color:var(--accent);
-  }
-}
-.tools{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
-.tool{
-  background:var(--card);border:1px solid var(--line);border-radius:10px;
-  padding:18px 20px;display:block;color:inherit;transition:border-color .15s,transform .15s
-}
-/* Archimedes, with the sign the right way round. Putting a load on a floating
-   body makes it SINK, not rise: a card that lifts when you point at it is the
-   one gesture every component library already does and it contradicts every
-   other pixel on this page. The curve is a damped float settling, not an ease.
-   The three structures founded on the bed do not move at all — they are the
-   whole argument. */
-.tool{transition:border-color .18s ease, transform .62s cubic-bezier(.22,1.35,.36,1)}
-.tool:hover,.tool:focus-within{border-color:var(--accent); transform:translateY(2px)}
-.tool[data-fisso]:hover,.tool[data-fisso]:focus-within{transform:none}
-/* There was no focus rule at all on ten links, and the card clips its own
-   overflow, so an outline drawn outside would be invisible. Draw it inside. */
-.tool:focus-visible{outline:2px solid var(--accent); outline-offset:-4px}
-@media (prefers-reduced-motion:reduce){
-  .tool{transition:border-color .18s ease}
-  .tool:hover,.tool:focus-within{transform:none}
-}
-
-/* The light law. Red is absorbed first in water, so as the reader descends the
-   layer names lose their warmth, step by step, and arrive at the bottom as
-   neutral ink. The luminance is held constant across all five, so the contrast
-   never drops: measured 6.39 / 6.41 / 6.32 / 6.35 / 6.30 against paper, all
-   above 4.5. It is chroma that is taken, never light. Pure CSS: this is the one
-   part of the law that is still visible with everything switched off. */
-.fleet .layer:nth-of-type(1) .layer-name{color:#6C5543}
-.fleet .layer:nth-of-type(2) .layer-name{color:#685647}
-.fleet .layer:nth-of-type(3) .layer-name{color:#65584C}
-.fleet .layer:nth-of-type(4) .layer-name{color:#63584F}
-.fleet .layer:nth-of-type(5) .layer-name{color:#615952}
-@media (prefers-color-scheme:dark){
-  .fleet .layer:nth-of-type(1) .layer-name{color:#CAB6A1}
-  .fleet .layer:nth-of-type(2) .layer-name{color:#C8B8A6}
-  .fleet .layer:nth-of-type(3) .layer-name{color:#C5B9AC}
-  .fleet .layer:nth-of-type(4) .layer-name{color:#C4BAB0}
-  .fleet .layer:nth-of-type(5) .layer-name{color:#C2BBB3}
-}
-.tool .n{font-family:var(--mono);font-weight:600;font-size:1.02rem;color:var(--accent);
-  display:flex;align-items:baseline;gap:9px}
-.tool .n small{font-family:var(--sans);font-weight:400;font-size:.72rem;color:var(--dim);
-  letter-spacing:.02em}
-.tool p{margin:9px 0 0;font-size:.93rem;color:var(--dim);max-width:none;line-height:1.5}
-
-/* ---------- stories ---------- */
-.story{border-left:2px solid var(--line);padding:2px 0 2px 24px;margin:0 0 34px}
-.story h3{font-size:1.08rem;margin-bottom:8px}
-.story p{font-size:.97rem;color:var(--dim);margin:0}
-.story p em{font-style:normal;color:var(--ink)}
-
-pre{
-  background:var(--card);border:1px solid var(--line);border-radius:10px;
-  padding:18px 20px;overflow-x:auto;font-family:var(--mono);font-size:.86rem;
-  line-height:1.65;margin:22px 0 0
-}
-.muted{color:var(--dim)}
-footer{padding:56px 0 80px;color:var(--dim);font-size:.9rem}
-footer a{color:var(--dim)}
-@media(max-width:600px){
-  header{padding:64px 0 48px} section{padding:52px 0}
-  body{font-size:16px}
-}
-
-/* ---------- the harbour ----------
-   One body of water, for the whole page, fixed to the viewport. The water does
-   not scroll: the reader descends through it. That is the whole idea, and every
-   other rule here exists to keep it readable.
-
-   Text never sits on moving pixels. The reading column carries its own paper
-   (.suolo), so the water is only ever seen around it — which is also what a
-   harbour looks like from above: a quay with water on both sides. On a narrow
-   screen the column takes the full width and the water withdraws to the top and
-   bottom, which is the correct answer rather than a compromise.
-
-   Nothing below is needed for the page to be finished. .mare-fondo is a plain
-   CSS wash that is always there; the canvas is empty until script fills it and
-   stays invisible until it has. */
-.mare-fondo{
-  position:fixed; inset:0; z-index:0; pointer-events:none;
-  background:
-    radial-gradient(140% 55% at 50% 100%, color-mix(in srgb, var(--accent) 11%, transparent), transparent 72%),
-    linear-gradient(to bottom, transparent 0%, color-mix(in srgb, var(--accent) 6%, transparent) 100%);
-}
-.mare{position:fixed; inset:0; z-index:0; pointer-events:none; display:block; width:100%; height:100%}
-.mare:not(.viva){opacity:0}
-/* Everything the reader reads floats above the water, on paper. */
-header, section, footer{position:relative; z-index:1}
-/* The reading column is solid paper edge to edge — the fade lives OUTSIDE it.
-   Put the gradient on the column itself and its first 72px are semi-transparent,
-   which is exactly where the 24px padding puts the left edge of every layer
-   label: --warn on a partial ground, measured at 2.8:1. The halo belongs beyond
-   the text, not under it. */
-.wrap{background:var(--paper); position:relative}
-.wrap::before{
-  content:""; position:absolute; z-index:-1; top:0; bottom:0; left:-84px; right:-84px;
-  background:linear-gradient(to right,
-    transparent 0, var(--paper) 84px, var(--paper) calc(100% - 84px), transparent 100%);
-}
-@media(max-width:1100px){ .wrap::before{display:none} }
-
-/* the depth scale: a sounding line down the left margin, only where there is
-   room for it. It is the one thing that tells the reader how deep they are. */
-.scandaglio{
-  position:fixed; left:20px; top:0; bottom:0; width:150px; z-index:2;
-  pointer-events:none; font-family:var(--mono); font-size:.66rem;
-  color:var(--dim); display:none;
-}
-@media(min-width:1100px){ .scandaglio{display:block} }
-.scandaglio .filo{position:absolute; left:11px; top:0; bottom:0; width:1px; background:var(--line)}
-.scandaglio .tacca{position:absolute; left:4px; width:15px; height:1px; background:var(--line)}
-.scandaglio .tacca span{position:absolute; left:22px; top:-.9em; white-space:nowrap;
-  letter-spacing:.09em; text-transform:uppercase; font-size:.6rem;
-  /* Opaque paper under every word. This column sits over open water, where the
-     ink peaks around 40% alpha, and --dim on that ground measures 2.75:1. A
-     shadow would not fix it: on type this small a shadow reads as blur. */
-  background:var(--paper); padding:2px 6px; border-radius:2px;}
-.scandaglio .piombo{
-  position:absolute; left:6px; width:11px; height:11px; margin-top:-5px;
-  border:1px solid var(--accent); border-radius:50%; background:var(--paper);
-}
-.scandaglio .piombo::after{
-  content:""; position:absolute; left:3px; top:3px; width:3px; height:3px;
-  border-radius:50%; background:var(--accent);
-}
-.scandaglio .quota{
-  position:absolute; left:30px; color:var(--accent); font-variant-numeric:tabular-nums;
-  margin-top:-.85em; letter-spacing:.06em; font-weight:600;
-  background:var(--paper); padding:2px 6px; border-radius:2px;
-}
-.scandaglio .etichetta{
-  position:absolute; left:0; top:14px; letter-spacing:.16em; text-transform:uppercase;
-  font-size:.55rem; background:var(--paper); padding:2px 6px; border-radius:2px;
-}
-
-/* i dieci segni: uno per strumento, disegnati come la pagina li chiama già */
-.tool{position:relative; overflow:hidden}
-.segno{
-  position:absolute; top:15px; right:15px; width:46px; height:46px;
-  overflow:visible; pointer-events:none;
-  color:var(--accent);
-}
-.segno .scafo{fill:none; stroke:var(--dim); stroke-width:1.6;
-  stroke-linecap:round; stroke-linejoin:round}
-.segno .vivo{fill:none; stroke:currentColor; stroke-width:1.8;
-  stroke-linecap:round; stroke-linejoin:round}
-.segno .pieno{fill:currentColor; stroke:none}
-.segno .onda{fill:none; stroke:var(--line); stroke-width:1.4; stroke-linecap:round}
-.segno .caldo{stroke:var(--warn)}
-.segno .acqua{fill:color-mix(in srgb, var(--accent) 14%, transparent); stroke:none}
-.tool .n{padding-right:54px}
-.tool:hover .segno{color:var(--accent)}
-@media(max-width:600px){
-  .segno{width:38px; height:38px; top:13px; right:12px}
-  .tool .n{padding-right:44px}
-}
-</style>
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://nerln.github.io/porto/">
+<link rel="icon" href="favicon.svg?v=3" type="image/svg+xml">
+<link rel="stylesheet" href="porto.css?v=6">
 </head>
 <body>
+<a class="skip-link" href="#main">Skip to the content</a>
 
-<!-- The harbour, once, for the whole page. It is fixed to the viewport because
-     the water does not scroll: the reader descends through it. Everything else
-     on the page sits above it and carries its own paper, so no running text is
-     ever laid over moving pixels. -->
-<div class="mare-fondo" aria-hidden="true"></div>
-<canvas class="mare" aria-hidden="true"></canvas>
+<canvas class="ocean-canvas" aria-hidden="true"></canvas>
+<div class="ocean-grain" aria-hidden="true"></div>
 
-<!-- The sounding line. A lead on a marked rope is how a harbour was measured
-     before there was anything else, and it is the only honest way to tell a
-     reader how deep they are: the marks are the page's own sections, at their
-     real depths, and the lead sits where the reader is. Script fills it in;
-     with script off there is nothing here to be missing. -->
-<div class="scandaglio" aria-hidden="true"><i class="filo"></i></div>
-
-<header>
-  <div class="wrap">
-    <p class="eyebrow">Porto · a control plane for coding agents</p>
-    <h1>Your agents are the ships. <em>You are the port.</em></h1>
-    <p class="lede">
-      Nine small tools that stop many AI coding agents from colliding on one laptop, and
-      the office that watches them. No daemons, no database, no dependencies past Python 3.
-      Every one of them was written the day something actually broke.
-    </p>
-    <div class="ports">
-      <span class="pill">macOS</span>
-      <span class="pill">Python 3.11+, stdlib only</span>
-      <span class="pill">MIT or GPL-3.0, per tool</span>
-      <span class="pill">no telemetry</span>
+<header class="topbar" data-topbar>
+  <nav class="topbar__inner" aria-label="Primary navigation">
+    <a class="brand" href="#top" aria-label="Porto, back to top">
+      <span class="brand__mark" aria-hidden="true"><i></i><i></i><i></i></span>
+      <span>PORTO</span>
+    </a>
+    <div class="topbar__links">
+      <a href="#problem">Why</a>
+      <a href="#fleet">Fleet</a>
+      <a href="#findings">Field notes</a>
     </div>
-  </div>
-  <svg class="pelo" aria-hidden="true" focusable="false" viewBox="0 0 1200 28" preserveAspectRatio="none">
-    <path class="sotto" d="M0 14H1200"/><path class="cresta" d="M0 14H1200"/>
-  </svg>
+    <a class="topbar__cta" href="#install">Install <span aria-hidden="true">↘</span></a>
+  </nav>
+  <i class="topbar__progress" aria-hidden="true"><span data-progress></span></i>
 </header>
 
-<section>
-  <div class="wrap">
-    <h2>The problem</h2>
-    <p class="big">
-      Four agents were open on a 16 GB laptop, one per project. Each of them decided,
-      reasonably and independently, that now was a good time to start something big.
-      None of them could see the others. Nothing in that story is a bug — sessions are
-      isolated by design. It only means that on one machine, <strong>nobody is
-      counting</strong>.
-    </p>
-    <div class="figures">
-      <div class="fig"><i class="battigia" aria-hidden="true"></i><b>14.3<span style="font-size:.6em"> GB</span></b>
-        <span>of swap in use, with nine live sessions, before anything looked wrong</span></div>
-      <div class="fig"><i class="battigia" aria-hidden="true"></i><b>10.5<span style="font-size:.6em"> h</span></b>
-        <span>a 5 GB job sat in the queue. It ran in 63 seconds once there was room</span></div>
-      <div class="fig"><i class="battigia" aria-hidden="true"></i><b>20<span style="font-size:.6em"> h</span></b>
-        <span>the oldest orphaned preview server, holding a port nobody would free</span></div>
-      <div class="fig"><i class="battigia" aria-hidden="true"></i><b>3.5<span style="font-size:.6em"> M</span></b>
-        <span>output tokens spent in one day, across sessions nobody was summing</span></div>
+<main id="main" tabindex="-1">
+  <section class="hero" id="top" data-section="top">
+    <div class="hero__copy">
+      <p class="kicker" data-reveal>Local control plane · nine tools · one office</p>
+      <h1 data-reveal>Your agents are the ships. <em>You are the port.</em></h1>
+      <p class="hero__lede" data-reveal>
+        Small tools that coordinate what coding agents can reach, spend, say and leave
+        running on one machine. Local-first, observable and quiet by design.
+      </p>
+      <div class="hero__actions" data-reveal>
+        <a class="button button--primary" href="#fleet">Meet the fleet <span aria-hidden="true">↓</span></a>
+        <a class="button button--text" href="https://github.com/nerln/porto">View the source <span aria-hidden="true">↗</span></a>
+      </div>
+      <ul class="hero__facts" aria-label="Project facts" data-reveal>
+        <li>macOS</li>
+        <li>Python 3.11+</li>
+        <li>stdlib only</li>
+        <li>no telemetry</li>
+      </ul>
     </div>
-  </div>
-</section>
 
-<section class="fleet">
-  <div class="wrap">
-    <h2>The fleet</h2>
-    <p style="margin-bottom:44px">
-      Every time several agents share a machine, there is a resource nobody is counting.
-      Each tool was born the day one of them ran out. None of them is an assistant:
-      they count, they limit, they show. <strong>The work stays with the agents.</strong>
-    </p>
-
-    <div class="layer">
-      <p class="layer-name" data-stazione="01">what comes in</p>
-      <div class="tools">
-        <a class="tool" href="https://github.com/nerln/vedetta">
-          <span class="n">vedetta <small>lookout</small></span>
-        <svg class="segno" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
-          <g class="corpo"><path class="scafo" d="M32 56V26"/><path class="scafo" d="M23 35h18"/>
-          <path class="vivo" d="M25 26v-8h14v8"/><path class="vivo" d="M25 18h14"/>
-          <g class="sguardo"><path class="vivo" d="M32 16L19 5M32 16L45 5" opacity=".65"/>
-          <path class="vivo" d="M19 5a21 21 0 0 1 26 0" opacity=".3"/></g></g>
-          <path class="onda" d="M5 57q8-4 16 0t16 0t16 0t10 0"/></svg>
-          <p>Internet reach for agents, without giving the internet a way to give the
-             agent orders. 17 sources, no API keys, no dependencies.</p></a>
-        <a class="tool" href="https://github.com/nerln/dogana">
-          <span class="n">dogana <small>customs</small></span>
-        <svg class="segno" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
-          <g class="corpo"><path class="scafo" d="M13 46V20M51 46V20"/>
-          <path class="vivo" d="M13 26h38"/>
-          <rect class="pieno passa" x="17" y="34" width="9" height="9" rx="1.5"/>
-          <rect class="scafo fermo" x="38" y="34" width="9" height="9" rx="1.5"/></g>
-          <path class="onda" d="M5 57q8-4 16 0t16 0t16 0t10 0"/></svg>
-          <p>A skill is not a library: it is text the agent reads and follows. This is
-             what inspects and quarantines the ones written by strangers.</p></a>
+    <div class="hero__harbour" aria-hidden="true">
+      <p class="harbour-label"><span>live harbour</span><span>scroll makes swell</span></p>
+      <svg class="waterline waterline--hero" viewBox="0 0 1000 120" preserveAspectRatio="none">
+        <path class="waterline__wash" d="M0 60H1000V120H0Z"></path>
+        <path class="waterline__line" d="M0 60H1000"></path>
+        <path class="waterline__foam" d="M0 60H1000"></path>
+      </svg>
+      <div class="hero-tool hero-tool--vedetta" data-float data-kind="buoy" data-name="vedetta" data-mass=".86" data-drift="-1">
+        <svg class="hero-tool__icon" viewBox="0 0 64 64"><g class="corpo"><path class="scafo" d="M32 56V26M23 35h18"/><path class="vivo" d="M25 26v-8h14v8M25 18h14"/><g class="sguardo"><path class="vivo" d="M32 16L19 5M32 16L45 5" opacity=".65"/><path class="vivo" d="M19 5a21 21 0 0 1 26 0" opacity=".3"/></g></g><path class="onda" d="M5 57q8-4 16 0t16 0t16 0t10 0"/></svg>
+        <span>vedetta <small>lookout</small></span>
+      </div>
+      <div class="hero-tool hero-tool--dogana" data-float data-kind="buoy" data-name="dogana" data-mass="1.12" data-drift="1">
+        <svg class="hero-tool__icon" viewBox="0 0 64 64"><g class="corpo"><path class="scafo" d="M13 46V20M51 46V20"/><path class="vivo" d="M13 26h38"/><rect class="pieno passa" x="17" y="34" width="9" height="9" rx="1.5"/><rect class="scafo" x="38" y="34" width="9" height="9" rx="1.5"/></g><path class="onda" d="M5 57q8-4 16 0t16 0t16 0t10 0"/></svg>
+        <span>dogana <small>customs</small></span>
+      </div>
+      <div class="hero-tool hero-tool--boa" data-float data-kind="buoy" data-name="boa" data-mass=".72" data-drift="1">
+        <svg class="hero-tool__icon" viewBox="0 0 64 64"><g class="corpo"><path class="vivo" d="M32 24V14M27 14h10"/><circle class="vivo" cx="32" cy="33" r="9"/><path class="vivo" d="M23 33h18"/></g><path class="scafo catena" d="M32 42v10"/><path class="scafo" d="M26 52h12v4H26z"/></svg>
+        <span>boa <small>mooring buoy</small></span>
+      </div>
+      <div class="hero-tool hero-tool--switch" data-float data-kind="buoy" data-name="agent-switch" data-mass="1.55" data-drift="-1">
+        <svg class="hero-tool__icon" viewBox="0 0 64 64"><g class="corpo"><path class="scafo" d="M4 40h18v12H4zM42 40h18v12H42zM10 40V30M54 40V30M10 30h44"/><g class="carico"><path class="vivo" d="M22 30v5"/><rect class="pieno" x="17" y="35" width="10" height="8" rx="1.5"/></g></g><path class="onda" d="M24 57q8-4 16 0"/></svg>
+        <span>agent-switch <small>transfer</small></span>
+      </div>
+      <div class="hero-tool hero-tool--faro hero-tool--fixed">
+        <svg class="hero-tool__icon" viewBox="0 0 64 64"><g class="corpo"><path class="scafo" d="M25 55L28 27h8l3 28zM26 41h12"/><rect class="vivo" x="27" y="18" width="10" height="9" rx="1"/></g><g class="fascio"><path class="vivo caldo" d="M37 18L60 9v18z" opacity=".5"/><path class="vivo caldo" d="M27 18L4 9v18z" opacity=".2"/></g><path class="onda" d="M5 57q8-4 16 0t16 0t16 0t10 0"/></svg>
+        <span>faro <small>fixed to the bed</small></span>
       </div>
     </div>
 
-    <div class="layer">
-      <p class="layer-name" data-stazione="02">what is held back</p>
-      <div class="tools">
-        <a class="tool" data-fisso href="https://github.com/nerln/paratia">
-          <span class="n">paratia <small>bulkhead</small></span>
-        <svg class="segno" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
-          <path class="acqua alta" d="M3 20q7-4 14 0t12 0v34H3z"/>
-          <path class="acqua bassa" d="M35 44q7-4 14 0t12 0v10H35z"/>
-          <g class="corpo"><path class="vivo" style="stroke-width:3" d="M32 6v50"/>
-          <rect class="scafo" x="27" y="28" width="10" height="10" rx="1.5"/></g>
-          <path class="onda alta" d="M3 20q7-4 14 0t12 0"/>
-          <path class="onda bassa" d="M35 44q7-4 14 0t12 0"/></svg>
-          <p>Files an agent cannot read. Not a line in a prompt asking it not to —
-             a deny list lives where the instructions live.</p></a>
-        <a class="tool" href="https://github.com/nerln/varo">
-          <span class="n">varo <small>launch</small></span>
-        <svg class="segno" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
-          <g class="corpo"><path class="scafo" d="M7 15L45 43M7 22L39 46"/>
-          <g class="scivola"><path class="vivo" d="M24 22h15l-4 8H28z"/></g></g>
-          <path class="onda" d="M5 57q8-4 16 0t16 0t16 0t10 0"/></svg>
-          <p>Ships static sites and checks the live copy, not the folder. Its auditor is
-             held read-only by the harness, not by a sentence in its description.</p></a>
+    <p class="hero__scroll" aria-hidden="true"><span>scroll</span><i></i></p>
+  </section>
+
+  <section class="problem" id="problem" data-section="problem">
+    <div class="section-shell problem__grid">
+      <div class="section-intro" data-reveal>
+        <p class="section-index">01 / Why Porto exists</p>
+        <h2>Every agent can be right while the machine still sinks.</h2>
+      </div>
+      <div class="problem__story" data-reveal>
+        <p>
+          Four agents were open on a 16 GB laptop, one per project. Each chose,
+          reasonably and independently, to start something big. None could see the
+          others. Nothing was broken. <strong>Nobody was counting.</strong>
+        </p>
+      </div>
+      <div class="metrics" aria-label="Measured incidents">
+        <div class="metric">
+          <b>14.3 <small>GB</small></b><span>swap in use before anything looked wrong</span>
+        </div>
+        <div class="metric">
+          <b>10.5 <small>h</small></b><span>waiting; then 63 seconds once there was room</span>
+        </div>
+        <div class="metric">
+          <b>20 <small>h</small></b><span>the oldest orphaned preview server</span>
+        </div>
+        <div class="metric">
+          <b>3.5 <small>M</small></b><span>output tokens in one uncounted day</span>
+        </div>
       </div>
     </div>
+  </section>
 
-    <div class="layer">
-      <p class="layer-name" data-stazione="03">what gets spent</p>
-      <div class="tools">
-        <a class="tool" href="https://github.com/nerln/rada">
-          <span class="n">rada <small>anchorage</small></span>
-        <svg class="segno" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
-          <g class="corpo"><circle class="vivo" cx="32" cy="13" r="3.5"/>
-          <path class="vivo" d="M32 17v24M23 24h18"/>
-          <path class="vivo" d="M32 41c-8 0-12-5-12-10M32 41c8 0 12-5 12-10"/></g>
-          <g class="coda"><path class="scafo" d="M9 48h9l-2 5h-5z"/>
-          <path class="scafo" d="M27 52h9l-2 5h-5z"/>
-          <path class="scafo" d="M45 47h9l-2 5h-5z"/></g></svg>
-          <p>An admission queue for heavy jobs. A model decides who goes first, because
-             arrival order cannot tell a test someone is waiting for from a nightly
-             re-index.</p></a>
-        <a class="tool" data-fisso href="https://github.com/nerln/faro">
-          <span class="n">faro <small>lighthouse</small></span>
-        <svg class="segno" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
-          <g class="corpo"><path class="scafo" d="M25 55L28 27h8l3 28z"/>
-          <path class="scafo" d="M26 41h12"/>
-          <rect class="vivo" x="27" y="18" width="10" height="9" rx="1"/></g>
-          <g class="fascio"><path class="vivo caldo" d="M37 18L60 9v18z" opacity=".5"/>
-          <path class="vivo caldo" d="M27 18L4 9v18z" opacity=".2"/></g>
-          <path class="onda" d="M5 57q8-4 16 0t16 0t16 0t10 0"/></svg>
-          <p>One board for everything running in the background, in six layers, each read
-             from the source that owns it. No daemon: a panel that becomes one more thing
-             to watch has already failed.</p></a>
+  <section class="fleet" id="fleet" data-section="fleet">
+    <div class="section-shell fleet__heading">
+      <div class="section-intro" data-reveal>
+        <p class="section-index">02 / The fleet</p>
+        <h2>Nine tools. One harbour office.</h2>
+      </div>
+      <p class="fleet__lede" data-reveal>
+        Each one was built the day a real resource ran out. They count, limit and show.
+        They never take the work away from the agents.
+      </p>
+    </div>
+
+    <div class="fleet-map">
+      <article class="fleet-row" data-row="01">
+        <header class="fleet-row__label"><span>01</span><h3>What comes in</h3></header>
+        <svg class="waterline waterline--row" viewBox="0 0 1000 96" preserveAspectRatio="none" aria-hidden="true">
+          <path class="waterline__wash" d="M0 48H1000V96H0Z"></path><path class="waterline__line" d="M0 48H1000"></path><path class="waterline__foam" d="M0 48H1000"></path>
+        </svg>
+        <div class="fleet-row__vessels">
+          <a class="vessel" href="https://github.com/nerln/vedetta">
+            <span class="vessel__inside">
+              <span class="vessel__float" data-float data-kind="vessel" data-name="vedetta" data-mass="0.86" data-drift="-1">
+                <span class="vessel__top"><span class="vessel__name">vedetta <small>lookout</small></span><span class="vessel__arrow" aria-hidden="true">↗</span></span>
+                <svg class="segno" viewBox="0 0 64 64" aria-hidden="true"><g class="corpo"><path class="scafo" d="M32 56V26M23 35h18"/><path class="vivo" d="M25 26v-8h14v8M25 18h14"/><g class="sguardo"><path class="vivo" d="M32 16L19 5M32 16L45 5" opacity=".65"/><path class="vivo" d="M19 5a21 21 0 0 1 26 0" opacity=".3"/></g></g><path class="onda" d="M5 57q8-4 16 0t16 0t16 0t10 0"/></svg>
+              </span>
+              <span class="vessel__copy">Internet reach without giving the internet a way to give the agent orders. 17 sources, zero API keys.</span>
+            </span>
+          </a>
+          <a class="vessel" href="https://github.com/nerln/dogana">
+            <span class="vessel__inside">
+              <span class="vessel__float" data-float data-kind="vessel" data-name="dogana" data-mass="1.12" data-drift="1">
+                <span class="vessel__top"><span class="vessel__name">dogana <small>customs</small></span><span class="vessel__arrow" aria-hidden="true">↗</span></span>
+                <svg class="segno" viewBox="0 0 64 64" aria-hidden="true"><g class="corpo"><path class="scafo" d="M13 46V20M51 46V20"/><path class="vivo" d="M13 26h38"/><rect class="pieno passa" x="17" y="34" width="9" height="9" rx="1.5"/><rect class="scafo fermo" x="38" y="34" width="9" height="9" rx="1.5"/></g><path class="onda" d="M5 57q8-4 16 0t16 0t16 0t10 0"/></svg>
+              </span>
+              <span class="vessel__copy">Inspects and quarantines skills written by strangers before an agent reads and follows them.</span>
+            </span>
+          </a>
+        </div>
+      </article>
+
+      <article class="fleet-row fleet-row--reverse" data-row="02">
+        <header class="fleet-row__label"><span>02</span><h3>What is held back</h3></header>
+        <svg class="waterline waterline--row" viewBox="0 0 1000 96" preserveAspectRatio="none" aria-hidden="true"><path class="waterline__wash" d="M0 48H1000V96H0Z"></path><path class="waterline__line" d="M0 48H1000"></path><path class="waterline__foam" d="M0 48H1000"></path></svg>
+        <div class="fleet-row__vessels">
+          <a class="vessel vessel--fixed" href="https://github.com/nerln/paratia">
+            <span class="vessel__inside">
+              <span class="vessel__float" data-float data-fixed data-kind="vessel" data-name="paratia">
+                <span class="vessel__top"><span class="vessel__name">paratia <small>bulkhead</small></span><span class="vessel__arrow" aria-hidden="true">↗</span></span>
+                <svg class="segno" viewBox="0 0 64 64" aria-hidden="true"><path class="acqua alta" d="M3 20q7-4 14 0t12 0v34H3z"/><path class="acqua bassa" d="M35 44q7-4 14 0t12 0v10H35z"/><g class="corpo"><path class="vivo" style="stroke-width:3" d="M32 6v50"/><rect class="scafo" x="27" y="28" width="10" height="10" rx="1.5"/></g><path class="onda alta" d="M3 20q7-4 14 0t12 0"/><path class="onda bassa" d="M35 44q7-4 14 0t12 0"/></svg>
+              </span>
+              <span class="vessel__copy">Keeps sensitive files inside an encrypted sparsebundle, then guards the mount at the kernel boundary.</span>
+              <span class="vessel__keel">founded on the harbour floor</span>
+            </span>
+          </a>
+          <a class="vessel" href="https://github.com/nerln/varo">
+            <span class="vessel__inside">
+              <span class="vessel__float" data-float data-kind="vessel" data-name="varo" data-mass="1.48" data-drift="-1">
+                <span class="vessel__top"><span class="vessel__name">varo <small>launch</small></span><span class="vessel__arrow" aria-hidden="true">↗</span></span>
+                <svg class="segno" viewBox="0 0 64 64" aria-hidden="true"><g class="corpo"><path class="scafo" d="M7 15L45 43M7 22L39 46"/><g class="scivola"><path class="vivo" d="M24 22h15l-4 8H28z"/></g></g><path class="onda" d="M5 57q8-4 16 0t16 0t16 0t10 0"/></svg>
+              </span>
+              <span class="vessel__copy">Ships static sites, then checks the live copy. Its auditor is held read-only by the harness.</span>
+            </span>
+          </a>
+        </div>
+      </article>
+
+      <article class="fleet-row" data-row="03">
+        <header class="fleet-row__label"><span>03</span><h3>What gets spent</h3></header>
+        <svg class="waterline waterline--row" viewBox="0 0 1000 96" preserveAspectRatio="none" aria-hidden="true"><path class="waterline__wash" d="M0 48H1000V96H0Z"></path><path class="waterline__line" d="M0 48H1000"></path><path class="waterline__foam" d="M0 48H1000"></path></svg>
+        <div class="fleet-row__vessels">
+          <a class="vessel" href="https://github.com/nerln/rada">
+            <span class="vessel__inside">
+              <span class="vessel__float" data-float data-kind="vessel" data-name="rada" data-mass="1.34" data-drift="1">
+                <span class="vessel__top"><span class="vessel__name">rada <small>anchorage</small></span><span class="vessel__arrow" aria-hidden="true">↗</span></span>
+                <svg class="segno" viewBox="0 0 64 64" aria-hidden="true"><g class="corpo"><circle class="vivo" cx="32" cy="13" r="3.5"/><path class="vivo" d="M32 17v24M23 24h18M32 41c-8 0-12-5-12-10M32 41c8 0 12-5 12-10"/></g><g class="coda"><path class="scafo" d="M9 48h9l-2 5h-5zM27 52h9l-2 5h-5zM45 47h9l-2 5h-5z"/></g></svg>
+              </span>
+              <span class="vessel__copy">An admission queue for heavy jobs. A model decides who goes first because arrival order cannot.</span>
+            </span>
+          </a>
+          <a class="vessel vessel--fixed" href="https://github.com/nerln/faro">
+            <span class="vessel__inside">
+              <span class="vessel__float" data-float data-fixed data-kind="vessel" data-name="faro">
+                <span class="vessel__top"><span class="vessel__name">faro <small>lighthouse</small></span><span class="vessel__arrow" aria-hidden="true">↗</span></span>
+                <svg class="segno" viewBox="0 0 64 64" aria-hidden="true"><g class="corpo"><path class="scafo" d="M25 55L28 27h8l3 28zM26 41h12"/><rect class="vivo" x="27" y="18" width="10" height="9" rx="1"/></g><g class="fascio"><path class="vivo caldo" d="M37 18L60 9v18z" opacity=".5"/><path class="vivo caldo" d="M27 18L4 9v18z" opacity=".2"/></g><path class="onda" d="M5 57q8-4 16 0t16 0t16 0t10 0"/></svg>
+              </span>
+              <span class="vessel__copy">One board for everything running in the background, read from the source that owns it.</span>
+              <span class="vessel__keel">founded on the harbour floor</span>
+            </span>
+          </a>
+        </div>
+      </article>
+
+      <article class="fleet-row fleet-row--reverse" data-row="04">
+        <header class="fleet-row__label"><span>04</span><h3>What gets said</h3></header>
+        <svg class="waterline waterline--row" viewBox="0 0 1000 96" preserveAspectRatio="none" aria-hidden="true"><path class="waterline__wash" d="M0 48H1000V96H0Z"></path><path class="waterline__line" d="M0 48H1000"></path><path class="waterline__foam" d="M0 48H1000"></path></svg>
+        <div class="fleet-row__vessels">
+          <a class="vessel" href="https://github.com/nerln/boa">
+            <span class="vessel__inside">
+              <span class="vessel__float" data-float data-kind="vessel" data-name="boa" data-mass="0.72" data-drift="-1">
+                <span class="vessel__top"><span class="vessel__name">boa <small>mooring buoy</small></span><span class="vessel__arrow" aria-hidden="true">↗</span></span>
+                <svg class="segno" viewBox="0 0 64 64" aria-hidden="true"><g class="corpo"><path class="vivo" d="M32 24V14M27 14h10"/><circle class="vivo" cx="32" cy="33" r="9"/><path class="vivo" d="M23 33h18"/></g><path class="scafo catena" d="M32 42v10"/><path class="scafo" d="M26 52h12v4H26z"/></svg>
+              </span>
+              <span class="vessel__copy">The blackboard every session sees, where models write on purpose instead of a collector guessing.</span>
+            </span>
+          </a>
+          <a class="vessel" href="https://github.com/nerln/plancia">
+            <span class="vessel__inside">
+              <span class="vessel__float" data-float data-kind="vessel" data-name="plancia" data-mass="1.18" data-drift="1">
+                <span class="vessel__top"><span class="vessel__name">plancia <small>bridge</small></span><span class="vessel__arrow" aria-hidden="true">↗</span></span>
+                <svg class="segno" viewBox="0 0 64 64" aria-hidden="true"><g class="corpo"><path class="scafo" d="M12 50V22h40v28zM17 26h30v8H17z"/><g class="timone"><circle class="vivo" cx="32" cy="43" r="6"/><path class="vivo" d="M32 37v12M26 43h12M32 35v2M32 49v2M24 43h2M40 43h2"/></g></g><path class="onda" d="M5 57q8-4 16 0t16 0t16 0t10 0"/></svg>
+              </span>
+              <span class="vessel__copy">One board for the work you do with AI. Claude Code and Codex already record it; this reads both.</span>
+            </span>
+          </a>
+        </div>
+      </article>
+
+      <article class="fleet-row" data-row="05">
+        <header class="fleet-row__label"><span>05</span><h3>What moves between</h3></header>
+        <svg class="waterline waterline--row" viewBox="0 0 1000 96" preserveAspectRatio="none" aria-hidden="true"><path class="waterline__wash" d="M0 48H1000V96H0Z"></path><path class="waterline__line" d="M0 48H1000"></path><path class="waterline__foam" d="M0 48H1000"></path></svg>
+        <div class="fleet-row__vessels">
+          <a class="vessel" href="https://github.com/eugenionerelli/claude-codex-bridge">
+            <span class="vessel__inside">
+              <span class="vessel__float" data-float data-kind="vessel" data-name="agent-switch" data-mass="1.55" data-drift="1">
+                <span class="vessel__top"><span class="vessel__name">agent-switch <small>transfer</small></span><span class="vessel__arrow" aria-hidden="true">↗</span></span>
+                <svg class="segno" viewBox="0 0 64 64" aria-hidden="true"><g class="corpo"><path class="scafo" d="M4 40h18v12H4zM42 40h18v12H42zM10 40V30M54 40V30M10 30h44"/><g class="carico"><path class="vivo" d="M22 30v5"/><rect class="pieno" x="17" y="35" width="10" height="8" rx="1.5"/></g></g><path class="onda" d="M24 57q8-4 16 0"/></svg>
+              </span>
+              <span class="vessel__copy">Moves a live conversation from Claude to Codex and back as a resumed session, not a summary.</span>
+            </span>
+          </a>
+          <a class="vessel vessel--fixed" href="https://github.com/nerln/capitaneria">
+            <span class="vessel__inside">
+              <span class="vessel__float" data-float data-fixed data-kind="vessel" data-name="capitaneria">
+                <span class="vessel__top"><span class="vessel__name">capitaneria <small>harbour master</small></span><span class="vessel__arrow" aria-hidden="true">↗</span></span>
+                <svg class="segno" viewBox="0 0 64 64" aria-hidden="true"><g class="corpo"><path class="scafo" d="M16 51V28h26v23z"/><rect class="scafo" x="24" y="35" width="10" height="9"/><path class="scafo" d="M46 51V12"/><g class="bandiera"><path class="vivo" d="M46 14h13l-4 5 4 5H46z"/></g></g><path class="scafo" d="M8 51h48"/></svg>
+              </span>
+              <span class="vessel__copy">The office you open first: reachability, live work and dirty repositories across the whole port.</span>
+              <span class="vessel__keel">founded on the harbour floor</span>
+            </span>
+          </a>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section class="findings" id="findings" data-section="findings">
+    <div class="section-shell">
+      <div class="section-intro findings__intro" data-reveal>
+        <p class="section-index">03 / Field notes</p>
+        <h2>Built from incidents, not imagined workflows.</h2>
+      </div>
+      <div class="stories">
+        <article class="story" data-reveal>
+          <span class="story__number">01</span>
+          <h3>An orphan is not necessarily sick.</h3>
+          <p>A missing parent proves less than it seems. A live session can still be using a reparented server. One more test kept faro from closing work three agents needed.</p>
+        </article>
+        <article class="story" data-reveal>
+          <span class="story__number">02</span>
+          <h3>Never date a scheduled job by its log.</h3>
+          <p>Quiet jobs do not touch their logs. launchd counts real runs, so Porto shows the count from the system that owns it—not an inference from stale text.</p>
+        </article>
+        <article class="story" data-reveal>
+          <span class="story__number">03</span>
+          <h3>The frame turned on its author.</h3>
+          <p>boa labels relayed text as data, never instruction. When its own author later sent an instruction through it, the receiving agent refused. The boundary held.</p>
+        </article>
       </div>
     </div>
+  </section>
 
-    <div class="layer">
-      <p class="layer-name" data-stazione="04">what gets said</p>
-      <div class="tools">
-        <a class="tool" href="https://github.com/nerln/boa">
-          <span class="n">boa <small>mooring buoy</small></span>
-        <svg class="segno" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
-          <g class="corpo"><path class="vivo" d="M32 24V14M27 14h10"/>
-          <circle class="vivo" cx="32" cy="33" r="9"/><path class="vivo" d="M23 33h18"/></g>
-          <path class="scafo catena" d="M32 42v10"/>
-          <path class="scafo" d="M26 52h12v4H26z"/></svg>
-          <p>The blackboard every session sees, where the models write on purpose instead
-             of a collector inferring intent from traces. What arrives from it is data,
-             never instruction.</p></a>
-        <a class="tool" href="https://github.com/nerln/plancia">
-          <span class="n">plancia <small>bridge</small></span>
-        <svg class="segno" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
-          <g class="corpo"><path class="scafo" d="M12 50V22h40v28z"/>
-          <path class="scafo" d="M17 26h30v8H17z"/>
-          <g class="timone"><circle class="vivo" cx="32" cy="43" r="6"/>
-          <path class="vivo" d="M32 37v12M26 43h12"/>
-          <path class="vivo" d="M32 35v2M32 49v2M24 43h2M40 43h2"/></g></g>
-          <path class="onda" d="M5 57q8-4 16 0t16 0t16 0t10 0"/></svg>
-          <p>One board for the work you do with AI. Claude Code and Codex already write
-             down everything they do; nothing read them together.</p></a>
+  <section class="install" id="install" data-section="install">
+    <span class="install__watermark" aria-hidden="true">PORTO</span>
+    <div class="section-shell install__grid">
+      <div class="section-intro" data-reveal>
+        <p class="section-index">04 / Come aboard</p>
+        <h2>Start with the two that pay back on day one.</h2>
+        <p class="install__note">Each tool stands alone. Install the whole suite only when you want the whole harbour.</p>
       </div>
-    </div>
-
-    <div class="layer">
-      <p class="layer-name" data-stazione="05">what moves between</p>
-      <div class="tools">
-        <a class="tool" href="https://github.com/eugenionerelli/claude-codex-bridge">
-          <span class="n">agent-switch <small>transfer</small></span>
-        <svg class="segno" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
-          <g class="corpo"><path class="scafo" d="M4 40h18v12H4zM42 40h18v12H42z"/>
-          <path class="scafo" d="M10 40V30M54 40V30"/><path class="scafo" d="M10 30h44"/>
-          <g class="carico"><path class="vivo" d="M22 30v5"/>
-          <rect class="pieno" x="17" y="35" width="10" height="8" rx="1.5"/></g></g>
-          <path class="onda" d="M24 57q8-4 16 0"/></svg>
-          <p>Moves a live conversation from Claude to Codex and back, as a real resumed
-             session, not a prompt asking the next model to reconstruct the work.</p></a>
-        <a class="tool" data-fisso href="https://github.com/nerln/capitaneria">
-          <span class="n">capitaneria <small>harbour master</small></span>
-        <svg class="segno" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
-          <g class="corpo"><path class="scafo" d="M16 51V28h26v23z"/>
-          <rect class="scafo" x="24" y="35" width="10" height="9"/>
-          <path class="scafo" d="M46 51V12"/>
-          <g class="bandiera"><path class="vivo" d="M46 14h13l-4 5 4 5H46z"/></g></g>
-          <path class="scafo" d="M8 51h48"/></svg>
-          <p>The office you look at first: which tools are reachable, which have something
-             running, which have uncommitted work. Opens and closes the ones with a face.</p></a>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section>
-  <div class="wrap">
-    <h2>Three things they found</h2>
-
-    <div class="story">
-      <h3>An orphan is not necessarily sick</h3>
-      <p>The first rule for reclaiming abandoned servers was <em>the parent is gone</em>.
-      It proves less than it looks like: a session that starts a server from a shell loses
-      the shell immediately, and the server is reparented while the session is alive and
-      using it. Without a fourth test, faro would have closed a server that three live
-      sessions were using.</p>
-    </div>
-
-    <div class="story">
-      <h3>Never date a scheduled job by its log</h3>
-      <p>Two jobs looked broken and neither was. One fires every minute and had
-      <em>1083 runs</em> against a log untouched for fourteen hours; the other had an empty
-      stderr from five days earlier and had run three hours before. Both write only when
-      they act. launchd counts the runs, so that is the number to show.</p>
-    </div>
-
-    <div class="story">
-      <h3>The frame turned on its author</h3>
-      <p>boa wraps everything it delivers in a notice saying the text is not from the user.
-      When the session that wrote that notice later sent a message beginning <em>"on behalf
-      of Eugenio, who is asleep"</em>, the receiving session refused it and quoted the
-      notice back. A defence that stops the person who wrote it is the only kind that has
-      demonstrated it exists.</p>
-    </div>
-  </div>
-</section>
-
-<section>
-  <div class="wrap">
-    <h2>Getting them</h2>
-    <p>Each one stands alone and none of them needs the others. Start with the two that
-    pay for themselves the first day.</p>
-<pre><span class="muted"># see what is running on your behalf, right now</span>
+      <div class="terminal" data-reveal>
+        <div class="terminal__bar"><span>porto / quick start</span><button type="button" data-copy aria-label="Copy quick-start commands">copy</button></div>
+        <pre><code><span># see what is running on your behalf</span>
 pipx install git+https://github.com/nerln/faro
 faro
 
-<span class="muted"># then the office that watches the whole port</span>
+<span># then open the office for the whole port</span>
 pipx install git+https://github.com/nerln/capitaneria
-capitaneria</pre>
-    <p class="muted">The same line works for boa, plancia, dogana, paratia and vedetta,
-    or <code>install.sh</code> in this repo takes all seven at once. varo is not a command:
-    it is a hook, a skill and an auditor agent, so it is installed by wiring it into
-    <code>~/.claude</code> rather than by pip.</p>
-    <p class="muted">Check what pipx builds on before you start:
-    <code>pipx environment --value PIPX_DEFAULT_PYTHON</code>. The Python that ships with
-    macOS is 3.9, and <code>pip install --user pipx</code> will happily bind pipx to it,
-    after which every one of these fails the same way. That is measured, not predicted:
-    it is how the first install attempt went.</p>
-  </div>
-</section>
+capitaneria</code></pre>
+        <p class="copy-status" role="status" aria-live="polite" data-copy-status></p>
+      </div>
+      <p class="install__fineprint" data-reveal>
+        The same line works for boa, plancia, dogana, paratia and vedetta.
+        Or <code>install.sh</code> in this repository installs all seven commands at once.
+      </p>
+    </div>
+  </section>
+</main>
 
-<footer>
-  <div class="wrap">
-    <a href="https://github.com/nerln">Eugenio Nerelli</a> · MIT or GPL-3.0, see each repo ·
-    every figure on this page is a measurement, not an estimate
+<footer class="footer">
+  <div class="section-shell footer__inner">
+    <a href="https://github.com/nerln">Eugenio Nerelli <span aria-hidden="true">↗</span></a>
+    <p>Measured on a real machine. No telemetry. MIT or GPL-3.0, per tool.</p>
+    <a href="#top">Back to surface <span aria-hidden="true">↑</span></a>
   </div>
 </footer>
 
-
-<!-- Both files are served from this repo: the page still makes no third-party
-     request. Both are deferred, so neither delays the text, and the section is
-     already composed by CSS before either of them runs. -->
-<script src="vendor/gsap.min.js" defer></script>
-<script src="js/mare.js" defer></script>
-
+<script src="vendor/gsap.min.js?v=3" defer></script>
+<script src="js/mare.js?v=6" defer></script>
 </body>
 </html>

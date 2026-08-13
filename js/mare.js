@@ -1,867 +1,633 @@
-/* porto — one harbour, for the whole page.
+/* Porto — a small physical harbour.
  *
- * THE LAW
+ * The page has two kinds of motion, deliberately kept separate:
  *
- * There is one body of water and it has a surface, at the top of the document.
- * Scrolling is not scrolling: it is descending. Every element on the page has a
- * depth, which is simply where it sits in the document, and depth is the only
- * thing that decides how much it moves.
+ * 1. The canvas draws the shared body of water. It is cheap Canvas 2D, not a
+ *    full-screen fluid solver: the result is a legible wave field rather than
+ *    coloured smoke, and it works on phones as well as desktops.
+ * 2. Every object marked data-float is a damped body with its own mass. Signed
+ *    scroll velocity creates drag; changes in velocity create an impulse. A
+ *    fast flick therefore makes light buoys overshoot while heavy vessels lag
+ *    behind. The three buildings marked data-fixed remain on the harbour bed.
  *
- * The swell is three travelling components with wavelengths 540, 265 and 128
- * pixels. Airy's result for water waves is that orbital motion at depth z falls
- * off as exp(-k z), where k = 2*pi/L. Short waves have a large k, so they die
- * first. That is not a stylistic choice, it is the theory, and it gives the page
- * its shape: near the surface the water is choppy, and as the reader descends
- * the chop goes first while the long swell survives. The bottom of the page is
- * not merely calmer than the top. It is SMOOTHER — a different quality of
- * motion, not less of the same one.
- *
- * With K = 1.25 and depth measured as a fraction d of the document:
- *
- *            d=0.05 (hero)   d=0.23 (figures)  d=0.45 (fleet)  d=0.98 (footer)
- *   L=540      0.94              0.75              0.57            0.29
- *   L=265      0.88              0.56              0.32            0.08
- *   L=128      0.77              0.30              0.09            0.006
- *
- * The motion is elliptical, not vertical: in deep water a particle goes round,
- * and the horizontal component is a quarter period out of phase with the
- * vertical one. A page that only bobs is telling half the truth, so the marks
- * are moved on both axes — but only the marks. Nothing carrying running text is
- * ever transformed, because moving text is unreadable text.
- *
- * WHAT NEVER MOVES
- *
- * paratia, faro and capitaneria are a bulkhead, a tower and an office. They are
- * built on the harbour floor. They hold still while everything around them
- * rides, and that distinction is the argument the page has been making in prose
- * the whole time.
- *
- * WHAT IS ALWAYS TRUE
- *
- * Depth is a property of the document, not of the viewport, so it does not
- * change when the reader scrolls. Every position is measured once and cached.
- * Nothing reads layout on a scroll frame.
- *
- * The page is finished before any of this runs. JS off, WebGL missing, GSAP
- * missing, or reduced motion asked for: what is left is the still version of the
- * same picture, never a broken version of a different one.
+ * Running text does not float. The named objects do, because their delay,
+ * overshoot and recovery are the point of the page. With reduced motion, the
+ * same composition remains complete and still.
  */
 (function () {
   'use strict';
 
-  var tela = document.querySelector('canvas.mare');
-  if (!tela) return;
+  var canvas = document.querySelector('.ocean-canvas');
+  if (!canvas) return;
 
-  var mqFermo = window.matchMedia ? matchMedia('(prefers-reduced-motion: reduce)') : null;
-  // Asked for less motion? Then no water, no swell, no cycles. But the sounding
-  // line stays and keeps working: knowing how deep you are is information, not
-  // animation — it is a scroll position indicator, no more moving than the
-  // scrollbar beside it. Taking it away would be removing help, not motion.
-  var fermo = !!(mqFermo && mqFermo.matches);
+  var ctx = canvas.getContext('2d', { alpha: true });
+  if (!ctx) return;
 
-  var rete = navigator.connection || {};
-  var scarso = rete.saveData === true ||
-               (navigator.deviceMemory && navigator.deviceMemory <= 2) ||
-               (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2);
+  var root = document.documentElement;
+  var topbar = document.querySelector('[data-topbar]');
+  var progress = document.querySelector('[data-progress]');
+  var reduceQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+  var darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
+  var reduced = reduceQuery.matches;
+  var connection = navigator.connection || {};
+  var economical = connection.saveData === true ||
+    (navigator.deviceMemory && navigator.deviceMemory <= 2) ||
+    (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2);
 
-  // ====================================================================
-  // 1. the swell, and how it dies with depth
-  // ====================================================================
-  var ONDE = [
-    { A: 2.2, L: 540, T: 5.30, f: 0.0 },
-    { A: 1.3, L: 265, T: 3.55, f: 2.1 },
-    { A: 0.7, L: 128, T: 2.46, f: 4.7 }
-  ];
   var TAU = Math.PI * 2;
-  // The basin has a floor. H is its depth, half the middle wavelength, so the
-  // swell feels the bed and the chop does not — which is what makes the three
-  // components behave differently instead of just being three sizes of the same
-  // thing. In deep water exp(-kz) is the right decay; in a basin it is not,
-  // because water cannot flow through the bottom.
-  var H_FONDO = 265 / 2;
-  var kH = [], shkH = [];
-  for (var _i = 0; _i < ONDE.length; _i++) {
-    kH.push(TAU / ONDE[_i].L * H_FONDO);
-    shkH.push(Math.sinh(kH[_i]));
-  }
+  var width = 1;
+  var height = 1;
+  var dpr = 1;
+  var documentHeight = 1;
+  var time = 0;
+  var lastFrame = 0;
+  var raf = 0;
+  var running = false;
+  var frameInterval = economical ? 1000 / 30 : 1000 / 60;
 
-  // Finite-depth Airy. Vertical motion goes to exactly zero at the bed, because
-  // nothing can move through it. Horizontal motion does NOT: at f=1 the three
-  // components still sum to 1.10 px of surge. So the footer does not freeze —
-  // it slides, slowly, along the bottom, which is what the bottom of a harbour
-  // actually does and is a better ending than stillness.
-  function smorzo(i, f) { return Math.sinh(kH[i] * (1 - f)) / shkH[i]; }
-  function smorzoOrizz(i, f) { return Math.cosh(kH[i] * (1 - f)) / shkH[i]; }
+  var scrollY = window.scrollY || 0;
+  var previousScrollY = scrollY;
+  var scrollVelocity = 0;
+  var previousVelocity = 0;
+  var scrollEnergy = 0;
+  var lastScrollSample = performance.now();
+  var lastNavY = -1;
+  var pointer = { x: width * 0.5, y: height * 0.5, at: 0 };
+  var ripples = [];
+  var bodies = [];
+  var ribbons = [];
+  var sections = [];
+  var navLinks = [];
+  var choreography = [];
+  var revealObserver = null;
 
-  // The orbit. oy is the vertical component, ox the horizontal one a quarter
-  // period ahead of it, and p the surface slope that tilts a floating hull.
-  var _orb = { oy: 0, ox: 0, p: 0 };
-  var DEC_SUP = [1, 1, 1];
-  function orbita(x, dec, orz, t) {
-    var oy = 0, ox = 0, p = 0;
-    for (var i = 0; i < ONDE.length; i++) {
-      var o = ONDE[i];
-      var fase = TAU * x / o.L + TAU * t / o.T + o.f;
-      var av = o.A * dec[i], ah = o.A * (orz ? orz[i] : dec[i]);
-      oy += av * Math.sin(fase);
-      // A quarter period ahead of the vertical: that offset is what makes the
-      // orbit an orbit. Get its sign wrong and the whole thing reads as a
-      // wobble instead of water.
-      ox += ah * Math.cos(fase);
-      p  += av * (TAU / o.L) * Math.cos(fase);
-    }
-    _orb.oy = oy; _orb.ox = ox; _orb.p = p;
-    return _orb;
-  }
-
-  // ====================================================================
-  // 2. everything that floats
-  // ====================================================================
-  // Structures standing on the bottom. They are named, not guessed.
-  var FISSI = { paratia: 1, faro: 1, capitaneria: 1 };
-  var PORTATA = {
-    boa: 1.35, rada: 1.0, dogana: 0.55, vedetta: 0.75,
-    varo: 0.5, plancia: 0.8, 'agent-switch': 0.45
+  var palette = {
+    sea: [15, 119, 116],
+    deep: [9, 75, 84],
+    foam: [220, 235, 229],
+    paper: [241, 237, 227]
   };
-  // The natural period of each body, in seconds: how long one bob takes when
-  // you push it and let go. A small light buoy answers fast; a loaded hull on a
-  // slipway is slow to start and slow to stop. This is what makes ten objects
-  // in the same water look like ten different objects instead of ten copies of
-  // one animation — and it is why a thing in water reads as floating rather
-  // than as following a line.
-  var PERIODO = {
-    boa: 1.6, dogana: 2.4, vedetta: 2.9, plancia: 3.0,
-    rada: 3.4, 'agent-switch': 3.8, varo: 4.2, sonda: 2.1
+
+  var PRESETS = {
+    buoy: {
+      stiffness: 18, dampingRatio: 0.32, waveY: 12, waveX: 6,
+      scrollLagY: 42, scrollLagX: 17, scrollRoll: 5.8,
+      impulseY: 92, impulseX: 34, impulseR: 16,
+      maxY: 66, maxX: 30, maxR: 8
+    },
+    vessel: {
+      stiffness: 23, dampingRatio: 0.33, waveY: 8.5, waveX: 5.2,
+      scrollLagY: 36, scrollLagX: 16, scrollRoll: 4.3,
+      impulseY: 84, impulseX: 31, impulseR: 12,
+      maxY: 52, maxX: 25, maxR: 6.2
+    }
   };
-  var SMORZO_CORPO = 0.22;   // underdamped: it overshoots, then settles
 
-  var galleggianti = [];   // { el, x, d, dec[], portata, ruota, fisso }
-  var altezzaDoc = 1;
-
-  function raccogli() {
-    galleggianti.length = 0;
-
-    // the ten harbour marks, one per tool
-    var carte = document.querySelectorAll('.tool');
-    for (var i = 0; i < carte.length; i++) {
-      var svg = carte[i].querySelector('.segno');
-      if (!svg) continue;
-      var et = carte[i].querySelector('.n');
-      var nome = et ? et.firstChild.textContent.trim() : '';
-      galleggianti.push({
-        nome: nome, el: svg.querySelector('.corpo') || svg, ancora: carte[i],
-        portata: PORTATA[nome] || 0.7, fisso: !!FISSI[nome], ruota: true, svg: true,
-        Tn: PERIODO[nome] || 2.8, y: 0, vy: 0, gx: 0, vgx: 0, r: 0, vr: 0
-      });
-    }
-    // The four soundings. A sounding is a depth measurement, and the footer
-    // already promises every figure here is a measurement, not an estimate.
-    // What floats is the waterline drawn beside each figure — never the number.
-    // Moving a numeral trades its subpixel antialiasing for a wobble of about a
-    // pixel: the reader loses legibility and gains nothing they can see.
-    var batt = document.querySelectorAll('.fig .battigia');
-    for (var j = 0; j < batt.length; j++) {
-      galleggianti.push({ nome: 'sonda', el: batt[j], ancora: batt[j].parentNode,
-                          portata: 0.9, fisso: false, ruota: false, svg: false,
-                          Tn: PERIODO.sonda + j * 0.28, y: 0, vy: 0, gx: 0, vgx: 0, r: 0, vr: 0 });
-    }
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
   }
 
-  // Measured once, then never on a scroll frame.
-  function misura() {
-    altezzaDoc = Math.max(1, document.documentElement.scrollHeight);
-    for (var i = 0; i < galleggianti.length; i++) {
-      var g = galleggianti[i];
-      var r = g.ancora.getBoundingClientRect();
-      g.x = r.left + r.width / 2 + (window.scrollX || 0);
-      g.cy = r.top + r.height / 2 + (window.scrollY || 0);
-      g.d = Math.min(1, Math.max(0, g.cy / altezzaDoc));
-      g.dec = [smorzo(0, g.d), smorzo(1, g.d), smorzo(2, g.d)];
-      g.orz = [smorzoOrizz(0, g.d), smorzoOrizz(1, g.d), smorzoOrizz(2, g.d)];
-    }
-    if (pelo) {
-      var rp = pelo.getBoundingClientRect();
-      altezzaPelo = rp.top + rp.height / 2 + (window.scrollY || 0);
-    }
-    aggiornaScandaglio();
+  function mix(current, target, speed, dt) {
+    return current + (target - current) * (1 - Math.exp(-speed * dt));
   }
 
-  // Each body is a mass on a spring: buoyancy is the spring, the water it
-  // displaces is the damping, and the wave surface is what the spring is
-  // attached to. It does not sit ON the wave, it CHASES it — so it arrives
-  // late, goes too far, comes back, and settles. That lateness is the whole
-  // difference between something floating and something following a sine.
-  //
-  //   a = w^2 (bersaglio - y) - 2 z w v          w = 2pi/Tn,  z = 0.22
-  //
-  // Semi-implicit Euler, dt already clamped upstream: with the slowest body at
-  // Tn=1.6s, w*dt at 60fps is 0.065, nowhere near the stability limit.
-  function muovi(t, dt, spinta) {
-    var y0 = window.scrollY || 0, y1 = y0 + window.innerHeight + 240;
-    for (var i = 0; i < galleggianti.length; i++) {
-      var g = galleggianti[i];
-      if (g.fisso) continue;
-      // Off screen: no integration and no write. Depth is cached, so this test
-      // is arithmetic and never touches layout.
-      if (g.cy < y0 - 240 || g.cy > y1) { g.vy *= 0.9; continue; }
-
-      var o = orbita(g.x, g.dec, g.orz, t);
-      var w = TAU / g.Tn, w2 = w * w, sm = 2 * SMORZO_CORPO * w;
-
-      // Scrolling hard is agitating the water. The energy goes into the bodies
-      // as velocity, not as position: shoving a duck does not teleport it, and
-      // each one answers on its own period, so they scatter instead of jumping
-      // together.
-      if (spinta) g.vy += spinta * (11 + 10 * g.portata) * (g.Tn / 3);
-
-      var by = o.oy * g.portata;
-      g.vy += (w2 * (by - g.y) - sm * g.vy) * dt;
-      g.y += g.vy * dt;
-      // The card clips its own overflow, so a body that rings too hard would
-      // simply be cut in half. This is the tank wall: hit it and the energy is
-      // absorbed, not reflected.
-      if (g.y > 9) { g.y = 9; if (g.vy > 0) g.vy = 0; }
-      else if (g.y < -9) { g.y = -9; if (g.vy < 0) g.vy = 0; }
-
-      var bx = o.ox * g.portata * 0.55;
-      g.vgx += (w2 * (bx - g.gx) - sm * g.vgx) * dt;
-      g.gx += g.vgx * dt;
-
-      if (g.svg) {
-        // The roll answers slower than the heave: a hull rights itself on its
-        // own period, not on the water's.
-        var wr = TAU / (g.Tn * 1.35), wr2 = wr * wr, smr = 2 * 0.28 * wr;
-        var br = Math.max(-7, Math.min(7, o.p * 90 * g.portata));
-        g.vr += (wr2 * (br - g.r) - smr * g.vr) * dt;
-        g.r += g.vr * dt;
-        var rr = Math.max(-11, Math.min(11, g.r));
-        g.el.setAttribute('transform',
-          'translate(' + g.gx.toFixed(2) + ' ' + g.y.toFixed(2) + ') rotate(' + rr.toFixed(2) + ' 32 40)');
-      } else {
-        g.el.style.transform =
-          'translate3d(' + g.gx.toFixed(2) + 'px,' + g.y.toFixed(2) + 'px,0)';
-      }
-    }
+  function parseHex(value, fallback) {
+    var match = String(value || '').trim().match(/^#([0-9a-f]{6})$/i);
+    if (!match) return fallback;
+    var n = parseInt(match[1], 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
   }
 
-  // ====================================================================
-  // 3. the fluid, on the GPU
-  // ====================================================================
-  function creaFluido(canvas) {
-    var par = {
-      alpha: true, depth: false, stencil: false, antialias: false,
-      preserveDrawingBuffer: false, powerPreference: 'low-power'
-    };
-    var gl = canvas.getContext('webgl2', par);
-    var due = !!gl;
-    if (!gl) gl = canvas.getContext('webgl', par) || canvas.getContext('experimental-webgl', par);
-    if (!gl) return null;
+  function rgba(rgb, alpha) {
+    return 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',' + alpha + ')';
+  }
 
-    // The extension must be asked for on THIS context before a float render
-    // target will ever be complete. Skipping it does not throw; it just gives
-    // an incomplete framebuffer later, which is a much worse way to find out.
-    var tipoHalf, lineare;
-    if (due) {
-      gl.getExtension('EXT_color_buffer_float');
-      lineare = !!gl.getExtension('OES_texture_float_linear');
-      tipoHalf = gl.HALF_FLOAT;
-    } else {
-      var hf = gl.getExtension('OES_texture_half_float');
-      lineare = !!gl.getExtension('OES_texture_half_float_linear');
-      tipoHalf = hf && hf.HALF_FLOAT_OES;
-    }
-    if (!tipoHalf) return null;
-    // Advection samples between texels. Without linear filtering it would need
-    // a hand-rolled bilinear fetch in every shader; the 2D fallback is both
-    // cheaper and honest, so we go there instead.
-    if (!lineare) return null;
+  function readPalette() {
+    var styles = getComputedStyle(root);
+    palette.sea = parseHex(styles.getPropertyValue('--sea'), palette.sea);
+    palette.deep = parseHex(styles.getPropertyValue('--sea-deep'), palette.deep);
+    palette.foam = parseHex(styles.getPropertyValue('--foam'), palette.foam);
+    palette.paper = parseHex(styles.getPropertyValue('--paper'), palette.paper);
+  }
 
-    var interno = due ? gl.RGBA16F : gl.RGBA;
-    if (!formatoRegge(gl, interno, gl.RGBA, tipoHalf)) return null;
+  /* Two long components and one short component. Their sum is used by both the
+   * canvas and the DOM bodies, so a vessel never bobs in water that is doing
+   * something unrelated beneath it. */
+  function waveSignal(x, phase, t) {
+    return Math.sin(x * 0.0072 + t * 0.76 + phase) +
+      Math.sin(x * 0.0165 - t * 0.48 + phase * 1.71) * 0.38 +
+      Math.sin(x * 0.0031 + t * 0.23 - phase * 0.61) * 0.54;
+  }
 
-    function formatoRegge(g, ii, ff, tt) {
-      var tex = g.createTexture();
-      g.bindTexture(g.TEXTURE_2D, tex);
-      g.texParameteri(g.TEXTURE_2D, g.TEXTURE_MIN_FILTER, g.NEAREST);
-      g.texParameteri(g.TEXTURE_2D, g.TEXTURE_MAG_FILTER, g.NEAREST);
-      g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_S, g.CLAMP_TO_EDGE);
-      g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_T, g.CLAMP_TO_EDGE);
-      g.texImage2D(g.TEXTURE_2D, 0, ii, 4, 4, 0, ff, tt, null);
-      var fbo = g.createFramebuffer();
-      g.bindFramebuffer(g.FRAMEBUFFER, fbo);
-      g.framebufferTexture2D(g.FRAMEBUFFER, g.COLOR_ATTACHMENT0, g.TEXTURE_2D, tex, 0);
-      var ok = g.checkFramebufferStatus(g.FRAMEBUFFER) === g.FRAMEBUFFER_COMPLETE;
-      g.deleteFramebuffer(fbo); g.deleteTexture(tex);
-      g.bindFramebuffer(g.FRAMEBUFFER, null);
-      return ok;
-    }
+  function waveSlope(x, phase, t) {
+    return Math.cos(x * 0.0072 + t * 0.76 + phase) * 0.76 +
+      Math.cos(x * 0.0165 - t * 0.48 + phase * 1.71) * 0.65 +
+      Math.cos(x * 0.0031 + t * 0.23 - phase * 0.61) * 0.17;
+  }
 
-    var VERT =
-      'precision highp float;attribute vec2 aPos;varying vec2 vUv,vL,vR,vT,vB;' +
-      'uniform vec2 texel;void main(){vUv=aPos*0.5+0.5;' +
-      'vL=vUv-vec2(texel.x,0.);vR=vUv+vec2(texel.x,0.);' +
-      'vT=vUv+vec2(0.,texel.y);vB=vUv-vec2(0.,texel.y);' +
-      'gl_Position=vec4(aPos,0.,1.);}';
-
-    function prog(fonteF) {
-      function sh(tipo, src) {
-        var s = gl.createShader(tipo);
-        gl.shaderSource(s, src); gl.compileShader(s);
-        if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
-        return s;
-      }
-      var p = gl.createProgram();
-      gl.attachShader(p, sh(gl.VERTEX_SHADER, VERT));
-      gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fonteF));
-      gl.bindAttribLocation(p, 0, 'aPos');
-      gl.linkProgram(p);
-      if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
-      var u = {}, n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
-      for (var k = 0; k < n; k++) { var nm = gl.getActiveUniform(p, k).name; u[nm] = gl.getUniformLocation(p, nm); }
-      return { p: p, u: u };
-    }
-
-    var P;
-    try {
-      P = {
-        // a gaussian of force and ink, dropped into the field
-        splat: prog('precision highp float;varying vec2 vUv;uniform sampler2D uT;' +
-          'uniform float rapp;uniform vec3 col;uniform vec2 punto;uniform float raggio;' +
-          'void main(){vec2 p=vUv-punto;p.x*=rapp;' +
-          'vec3 s=exp(-dot(p,p)/raggio)*col;' +
-          'gl_FragColor=vec4(texture2D(uT,vUv).xyz+s,1.);}'),
-        // semi-lagrangian advection: look back along the velocity, take what was there
-        avvez: prog('precision highp float;varying vec2 vUv;uniform sampler2D uVel,uSrc;' +
-          'uniform vec2 texel;uniform float dt,perdita;' +
-          'void main(){vec2 c=vUv-dt*texture2D(uVel,vUv).xy*texel;' +
-          'gl_FragColor=texture2D(uSrc,c)/(1.+perdita*dt);}'),
-        diverg: prog('precision highp float;varying vec2 vUv,vL,vR,vT,vB;uniform sampler2D uVel;' +
-          'void main(){float L=texture2D(uVel,vL).x,R=texture2D(uVel,vR).x;' +
-          'float T=texture2D(uVel,vT).y,B=texture2D(uVel,vB).y;vec2 C=texture2D(uVel,vUv).xy;' +
-          'if(vL.x<0.)L=-C.x; if(vR.x>1.)R=-C.x; if(vT.y>1.)T=-C.y; if(vB.y<0.)B=-C.y;' +
-          'gl_FragColor=vec4(0.5*(R-L+T-B),0.,0.,1.);}'),
-        // one Jacobi sweep of the Poisson solve; run it a few times
-        press: prog('precision highp float;varying vec2 vUv,vL,vR,vT,vB;uniform sampler2D uP,uDiv;' +
-          'void main(){float L=texture2D(uP,vL).x,R=texture2D(uP,vR).x;' +
-          'float T=texture2D(uP,vT).x,B=texture2D(uP,vB).x,d=texture2D(uDiv,vUv).x;' +
-          'gl_FragColor=vec4((L+R+B+T-d)*0.25,0.,0.,1.);}'),
-        // subtract the pressure gradient: this is what makes it incompressible
-        grad: prog('precision highp float;varying vec2 vUv,vL,vR,vT,vB;uniform sampler2D uP,uVel;' +
-          'void main(){float L=texture2D(uP,vL).x,R=texture2D(uP,vR).x;' +
-          'float T=texture2D(uP,vT).x,B=texture2D(uP,vB).x;' +
-          'vec2 v=texture2D(uVel,vUv).xy-vec2(R-L,T-B);' +
-          'gl_FragColor=vec4(v,0.,1.);}'),
-        pulisci: prog('precision highp float;varying vec2 vUv;uniform sampler2D uT;uniform float val;' +
-          'void main(){gl_FragColor=val*texture2D(uT,vUv);}'),
-        // ink on paper: one colour, varying only in how much of it there is
-        mostra: prog('precision highp float;varying vec2 vUv;uniform sampler2D uT;' +
-          'uniform vec3 inchiostro;uniform float forza;' +
-          'void main(){float d=clamp(texture2D(uT,vUv).x*forza,0.,1.);' +
-          'gl_FragColor=vec4(inchiostro*d,d);}')
+  function collectBodies() {
+    bodies = Array.prototype.map.call(document.querySelectorAll('[data-float]'), function (element, index) {
+      var kind = element.getAttribute('data-kind') || 'vessel';
+      return {
+        element: element,
+        kind: kind,
+        preset: PRESETS[kind] || PRESETS.vessel,
+        mass: Math.max(0.45, parseFloat(element.getAttribute('data-mass')) || 1),
+        drift: parseFloat(element.getAttribute('data-drift')) || (index % 2 ? 1 : -1),
+        fixed: element.hasAttribute('data-fixed'),
+        name: element.getAttribute('data-name') || kind + '-' + index,
+        phase: index * 1.217 + (kind === 'buoy' ? 0.4 : 1.8),
+        x: 0, y: 0, rotation: 0,
+        vx: 0, vy: 0, vr: 0,
+        documentX: 0, documentY: 0,
+        visible: true
       };
-    } catch (e) { return null; }
+    });
 
-    var buf = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
-    gl.enableVertexAttribArray(0);
-    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
-
-    function bersaglio(w, h) {
-      var tex = gl.createTexture();
-      gl.bindTexture(gl.TEXTURE_2D, tex);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      gl.texImage2D(gl.TEXTURE_2D, 0, interno, w, h, 0, gl.RGBA, tipoHalf, null);
-      var fbo = gl.createFramebuffer();
-      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
-      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
-      gl.viewport(0, 0, w, h);
-      gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
-      return { tex: tex, fbo: fbo, w: w, h: h, texel: [1 / w, 1 / h] };
-    }
-    function doppio(w, h) {
-      var a = bersaglio(w, h), b = bersaglio(w, h);
-      return { get uno() { return a; }, get due() { return b; }, scambia: function () { var t = a; a = b; b = t; } };
-    }
-
-    function disegna(dest) {
-      if (dest) { gl.bindFramebuffer(gl.FRAMEBUFFER, dest.fbo); gl.viewport(0, 0, dest.w, dest.h); }
-      else { gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight); }
-      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-    }
-    function lega(tex, unita) {
-      gl.activeTexture(gl.TEXTURE0 + unita);
-      gl.bindTexture(gl.TEXTURE_2D, tex);
-      return unita;
-    }
-
-    // Small on purpose. A harbour that is mostly out of frame does not need a
-    // 512 grid, and a phone should not warm up for a background texture.
-    var SIM = scarso ? 64 : 128;
-    var TINTA = scarso ? 128 : 256;
-    var vel = doppio(SIM, SIM), inc = doppio(TINTA, TINTA);
-    var div = bersaglio(SIM, SIM), pre = doppio(SIM, SIM);
-    var ITER = scarso ? 8 : 12;
-    var perso = false;
-
-    canvas.addEventListener('webglcontextlost', function (e) { e.preventDefault(); perso = true; }, false);
-
-    return {
-      perduto: function () { return perso; },
-      schizza: function (nx, ny, dx, dy, quanto) {
-        if (perso) return;
-        var rapp = tela.width / tela.height;
-        gl.useProgram(P.splat.p);
-        gl.uniform1i(P.splat.u.uT, lega(vel.uno.tex, 0));
-        gl.uniform1f(P.splat.u.rapp, rapp);
-        gl.uniform2f(P.splat.u.punto, nx, ny);
-        gl.uniform3f(P.splat.u.col, dx, dy, 0);
-        gl.uniform1f(P.splat.u.raggio, 0.0004);
-        disegna(vel.due); vel.scambia();
-
-        gl.uniform1i(P.splat.u.uT, lega(inc.uno.tex, 0));
-        gl.uniform3f(P.splat.u.col, quanto, quanto, quanto);
-        gl.uniform1f(P.splat.u.raggio, 0.0030);
-        disegna(inc.due); inc.scambia();
-      },
-      passo: function (dt) {
-        if (perso) return;
-        gl.disable(gl.BLEND);
-
-        gl.useProgram(P.avvez.p);
-        gl.uniform2f(P.avvez.u.texel, vel.uno.texel[0], vel.uno.texel[1]);
-        gl.uniform1i(P.avvez.u.uVel, lega(vel.uno.tex, 0));
-        gl.uniform1i(P.avvez.u.uSrc, lega(vel.uno.tex, 0));
-        gl.uniform1f(P.avvez.u.dt, dt);
-        gl.uniform1f(P.avvez.u.perdita, 0.18);
-        disegna(vel.due); vel.scambia();
-
-        gl.useProgram(P.diverg.p);
-        gl.uniform2f(P.diverg.u.texel, vel.uno.texel[0], vel.uno.texel[1]);
-        gl.uniform1i(P.diverg.u.uVel, lega(vel.uno.tex, 0));
-        disegna(div);
-
-        gl.useProgram(P.pulisci.p);
-        gl.uniform1i(P.pulisci.u.uT, lega(pre.uno.tex, 0));
-        gl.uniform1f(P.pulisci.u.val, 0.8);
-        disegna(pre.due); pre.scambia();
-
-        gl.useProgram(P.press.p);
-        gl.uniform2f(P.press.u.texel, pre.uno.texel[0], pre.uno.texel[1]);
-        gl.uniform1i(P.press.u.uDiv, lega(div.tex, 0));
-        for (var k = 0; k < ITER; k++) {
-          gl.uniform1i(P.press.u.uP, lega(pre.uno.tex, 1));
-          disegna(pre.due); pre.scambia();
+    bodies.forEach(function (body) {
+      body.element.addEventListener('pointerenter', function () {
+        addRippleAtElement(body.element, body.fixed ? 0.35 : 0.75);
+        if (!body.fixed && !reduced) {
+          body.vy -= 26 / body.mass;
+          body.vr += body.drift * 3.8 / body.mass;
         }
-
-        gl.useProgram(P.grad.p);
-        gl.uniform2f(P.grad.u.texel, vel.uno.texel[0], vel.uno.texel[1]);
-        gl.uniform1i(P.grad.u.uP, lega(pre.uno.tex, 0));
-        gl.uniform1i(P.grad.u.uVel, lega(vel.uno.tex, 1));
-        disegna(vel.due); vel.scambia();
-
-        gl.useProgram(P.avvez.p);
-        gl.uniform2f(P.avvez.u.texel, inc.uno.texel[0], inc.uno.texel[1]);
-        gl.uniform1i(P.avvez.u.uVel, lega(vel.uno.tex, 0));
-        gl.uniform1i(P.avvez.u.uSrc, lega(inc.uno.tex, 1));
-        gl.uniform1f(P.avvez.u.dt, dt);
-        gl.uniform1f(P.avvez.u.perdita, 0.55);
-        disegna(inc.due); inc.scambia();
-      },
-      rendi: function (rgb, forza) {
-        if (perso) return;
-        gl.enable(gl.BLEND);
-        gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-        gl.useProgram(P.mostra.p);
-        gl.uniform1i(P.mostra.u.uT, lega(inc.uno.tex, 0));
-        gl.uniform3f(P.mostra.u.inchiostro, rgb[0], rgb[1], rgb[2]);
-        gl.uniform1f(P.mostra.u.forza, forza);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-        gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
-        gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
-        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-      }
-    };
-  }
-
-  // ====================================================================
-  // 4. the fallback water: the same swell, ruled like a chart
-  // ====================================================================
-  function creaDisegno(canvas) {
-    var ctx = canvas.getContext('2d');
-    if (!ctx) return null;
-    return {
-      perduto: function () { return false; },
-      schizza: function () {},
-      passo: function () {},
-      // Without a GPU there is no point imitating one. This rules the swell the
-      // way a chart would, in the language the ten marks are drawn in, and it
-      // obeys the same law: the lines lower down the viewport are deeper, so
-      // they are flatter and fainter.
-      rendi: function (rgb, forza, t, larg, alt, quotaAlto) {
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.scale(canvas.width / larg, canvas.height / alt);
-        var col = 'rgba(' + Math.round(rgb[0] * 255) + ',' + Math.round(rgb[1] * 255) + ',' +
-                  Math.round(rgb[2] * 255) + ',';
-        var RIGHE = 16, passo = alt / (RIGHE + 1);
-        for (var r = 0; r < RIGHE; r++) {
-          var base = passo * (r + 1);
-          var d = Math.min(1, Math.max(0, quotaAlto + base / Math.max(1, altezzaDoc)));
-          var dec = [smorzo(0, d), smorzo(1, d), smorzo(2, d)];
-          ctx.beginPath();
-          for (var x = 0; x <= larg; x += 6) {
-            var o = orbita(x, dec, dec, t);
-            var y = base + o.oy * 1.35;
-            if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-          }
-          var f = 0.30 * (0.45 + 0.55 * dec[0]);
-          ctx.strokeStyle = col + f.toFixed(3) + ')';
-          ctx.lineWidth = 1.15;
-          ctx.stroke();
-        }
-      }
-    };
-  }
-
-  // ====================================================================
-  // 4b. the surface
-  // ====================================================================
-  // The waterline at the foot of the hero, drawn from the same field at depth
-  // zero — full amplitude, because this IS the surface. Scroll past it and it
-  // is gone, which is the correct thing to happen when you go under.
-  var pelo = document.querySelector('.pelo');
-  var cresta = pelo && pelo.querySelector('.cresta');
-
-  function disegnaPelo(t) {
-    if (!cresta || !peloInVista) return;
-    var d = 'M', N = 48, W = 1200;
-    for (var i = 0; i <= N; i++) {
-      var x = i * (W / N);
-      // The viewBox is 1200 wide whatever the window is, so the field is
-      // sampled in page pixels and mapped across, or the swell would stretch
-      // with the window and stop being the same water as everything else.
-      var o = orbita(x / W * larg, DEC_SUP, DEC_SUP, t);
-      var y = 14 + o.oy * 1.15;
-      d += (i ? 'L' : '') + x.toFixed(1) + ' ' + y.toFixed(2);
-    }
-    cresta.setAttribute('d', d);
-  }
-
-  // ====================================================================
-  // 5. the sounding line
-  // ====================================================================
-  var peloInVista = true;
-  var scandaglio = document.querySelector('.scandaglio');
-  var piombo = null, quota = null, tacche = [];
-
-  function aggiornaScandaglio() {
-    if (!scandaglio) return;
-    if (!piombo) {
-      piombo = document.createElement('i'); piombo.className = 'piombo';
-      quota = document.createElement('i'); quota.className = 'quota';
-      var et = document.createElement('i'); et.className = 'etichetta';
-      et.textContent = 'sounding';
-      scandaglio.appendChild(et);
-      scandaglio.appendChild(piombo); scandaglio.appendChild(quota);
-    }
-    // The marks are the page's own sections, at the depth they really sit at.
-    for (var i = 0; i < tacche.length; i++) scandaglio.removeChild(tacche[i]);
-    tacche.length = 0;
-    var punti = [];
-    var h2 = document.querySelectorAll('section > .wrap > h2');
-    punti.push({ nome: 'surface', y: 0 });
-    for (var j = 0; j < h2.length; j++) {
-      var r = h2[j].getBoundingClientRect();
-      punti.push({ nome: h2[j].textContent.trim(), y: r.top + (window.scrollY || 0) });
-    }
-    for (var k = 0; k < punti.length; k++) {
-      var t = document.createElement('i');
-      t.className = 'tacca';
-      t.style.top = (100 * punti[k].y / altezzaDoc).toFixed(2) + '%';
-      var s = document.createElement('span');
-      s.textContent = punti[k].nome;
-      t.appendChild(s);
-      scandaglio.appendChild(t); tacche.push(t);
-    }
-  }
-
-  function segnaProfondita() {
-    if (!piombo) return;
-    var y = (window.scrollY || 0) + window.innerHeight / 2;
-    var d = Math.min(1, Math.max(0, y / altezzaDoc));
-    piombo.style.top = (100 * d).toFixed(2) + '%';
-    quota.style.top = (100 * d).toFixed(2) + '%';
-    // Read as a fraction of the whole harbour. It is a real number about the
-    // page, not a decorative counter: it is where the reader is.
-    quota.textContent = (d * 100).toFixed(0) + '%';
-  }
-
-  // ====================================================================
-  // 6. wiring
-  // ====================================================================
-  var motore = null, modo = 'niente';
-  try { if (!fermo) { motore = creaFluido(tela); if (motore) modo = 'fluido'; } } catch (e) { motore = null; }
-  if (!motore && !fermo) { try { motore = creaDisegno(tela); if (motore) modo = 'disegno'; } catch (e2) { motore = null; } }
-
-  var larg = 0, alt = 0, dpr = 1;
-  function ridimensiona() {
-    larg = Math.max(1, window.innerWidth);
-    alt = Math.max(1, window.innerHeight);
-    var stretto = larg < 700;
-    dpr = Math.min(window.devicePixelRatio || 1, scarso || stretto ? 1 : 1.6);
-    var w = Math.round(larg * dpr), h = Math.round(alt * dpr);
-    if (tela.width !== w || tela.height !== h) { tela.width = w; tela.height = h; }
-    raccogli(); misura(); segnaProfondita();
-  }
-
-  var inchiostro = [0.04, 0.36, 0.36], forzaInk = 0.38;
-  function leggiColore() {
-    var c = getComputedStyle(document.body).getPropertyValue('--accent').trim();
-    var m = c.match(/^#?([0-9a-f]{6})$/i);
-    if (m) {
-      var n = parseInt(m[1], 16);
-      inchiostro = [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
-    }
-    var scuro = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches;
-    forzaInk = scuro ? 0.62 : 0.46;
-  }
-
-  // Where the ink enters. Down both sides, because the reading column runs down
-  // the middle on its own paper and the open water is what is left.
-  var SORGENTI = [
-    { x: 0.030, y: 0.22, f: 0.061, g: 0.19, v: 150, a: 0.072, p: 0.0 },
-    { x: 0.060, y: 0.62, f: 0.043, g: -0.23, v: 135, a: 0.072, p: 1.7 },
-    { x: 0.970, y: 0.22, f: 0.055, g: -0.21, v: -145, a: 0.074, p: 0.9 },
-    { x: 0.940, y: 0.68, f: 0.067, g: 0.25, v: -130, a: 0.070, p: 2.6 }
-  ];
-  // Four sources, not eight. Every source is two draw calls, and on a
-  // tile-based GPU each draw is a whole render pass with a load and a store of
-  // the target. Passes are the cost, not pixels: halving them halved the frame.
-
-  var t = 0, ultimo = 0, vivo = false, acceso = false, altezzaPelo = 0;
-  var yPrec = 0, scia = 0;
-
-  function fotogramma(ora) {
-    if (!vivo) return;
-    var dt = ultimo ? Math.min((ora - ultimo) / 1000, 1 / 24) : 1 / 60;
-    ultimo = ora; t += dt;
-    avanza(dt);
-    if (!acceso) { tela.classList.add('viva'); acceso = true; }
-    requestAnimationFrame(fotogramma);
-  }
-
-  function avanza(dt) {
-    var y = window.scrollY || 0;
-    // A body moving through water leaves a wake. Scrolling fast is moving fast,
-    // so the harbour churns and then settles, which is the only feedback on
-    // this page that answers the reader's own hand.
-    var passi = Math.abs(y - yPrec);
-    var vel = Math.min(1, passi / 90);
-    scia = scia * 0.88 + vel * 0.12;
-    // The impulse is the SUDDEN part of the scroll, not the steady part: a
-    // reader gliding down at constant speed is a boat under way and leaves a
-    // wake; a reader flinging the page is a hand in the bath.
-    var spinta = Math.min(1, passi / 260) * Math.min(1, dt * 60);
-    yPrec = y;
-    // The surface is at the top of the document: the fraction of the harbour
-    // that is above the top of the viewport.
-    var quotaAlto = Math.min(1, Math.max(0, y / altezzaDoc));
-
-    if (motore && modo === 'fluido') {
-      for (var s = 0; s < SORGENTI.length; s++) {
-        var o = SORGENTI[s];
-        // The sources obey the law too: one near the top of the harbour is in
-        // lively water, one near the bottom is in slack water.
-        var dSorg = Math.min(1, quotaAlto + (1 - o.y) * (alt / Math.max(1, altezzaDoc)));
-        var calma = 0.30 + 0.70 * smorzo(0, dSorg);
-        var puls = 0.5 + 0.5 * Math.sin(TAU * t * o.f + o.p);
-        var ang = t * o.g + o.p;
-        motore.schizza(
-          o.x + 0.018 * Math.sin(t * 0.21 + o.p),
-          o.y + 0.012 * Math.cos(t * 0.27 + o.p),
-          o.v * Math.cos(ang) * calma * (1 + 2.2 * scia),
-          o.v * 0.35 * Math.sin(ang) * calma,
-          o.a * puls * calma * (1 + 1.4 * scia));
-      }
-      motore.passo(Math.min(dt, 1 / 30));
-      motore.rendi(inchiostro, forzaInk);
-    } else if (motore) {
-      motore.rendi(inchiostro, forzaInk, t, larg, alt, quotaAlto);
-    }
-    // The surface only exists while it is on screen; below it there is nothing
-    // to draw and no reason to spend a frame on it.
-    if (pelo) {
-      var pr = altezzaPelo - (window.scrollY || 0);
-      peloInVista = pr > -60 && pr < alt + 60;
-      disegnaPelo(t);
-    }
-    muovi(t, Math.min(dt, 1 / 30), spinta);
-    segnaProfondita();
-  }
-
-  // The pointer stirs the water, never the marks: a reader cannot drag a hull
-  // out of the sea it lives in.
-  var ultimoP = null;
-  function daPuntatore(e) {
-    if (!motore || modo !== 'fluido' || motore.perduto()) return;
-    var nx = e.clientX / larg, ny = 1 - e.clientY / alt;
-    if (nx < 0 || nx > 1 || ny < 0 || ny > 1) { ultimoP = null; return; }
-    if (ultimoP) {
-      var dx = (nx - ultimoP[0]) * 900, dy = (ny - ultimoP[1]) * 900;
-      if (dx * dx + dy * dy > 0.2) motore.schizza(nx, ny, dx, dy, 0.16);
-    }
-    ultimoP = [nx, ny];
-  }
-
-  // A card taking focus or hover displaces the water at that exact point. It is
-  // the same event a keyboard gives, so tabbing through the fleet stirs the
-  // harbour just as a mouse does — the one interaction on this page that a
-  // keyboard reader would otherwise never get.
-  function tocca(el, quanto) {
-    if (!motore || modo !== 'fluido' || motore.perduto()) return;
-    var r = el.getBoundingClientRect();
-    if (r.bottom < 0 || r.top > alt) return;
-    var nx = (r.left + r.width / 2) / larg, ny = 1 - (r.top + r.height / 2) / alt;
-    motore.schizza(nx, ny, 0, 120 * quanto, 0.22 * quanto);
-  }
-
-
-  // ====================================================================
-  // 7. GSAP: the cycles that are not the swell
-  // ====================================================================
-  function coreografia() {
-    if (!window.gsap) return;
-    var g = window.gsap;
-    function q(sel) { return document.querySelector(sel); }
-    var fascio = q('.segno .fascio');
-    if (fascio) g.to(fascio, { rotation: 8, duration: 3.4, yoyo: true, repeat: -1,
-                               ease: 'sine.inOut', transformOrigin: '32px 22px' });
-    var sguardo = q('.segno .sguardo');
-    if (sguardo) g.to(sguardo, { rotation: -10, duration: 4.1, yoyo: true, repeat: -1,
-                                 ease: 'sine.inOut', transformOrigin: '32px 16px' });
-    var passa = q('.segno .passa');
-    if (passa) g.fromTo(passa, { x: -14, opacity: 0 },
-      { x: 26, opacity: 1, duration: 2.6, ease: 'none', repeat: -1, repeatDelay: 1.1,
-        onRepeat: function () { g.set(passa, { opacity: 0 }); } });
-    var scivola = q('.segno .scivola');
-    if (scivola) g.fromTo(scivola, { x: -13, y: -9 },
-      { x: 6, y: 4, duration: 2.2, ease: 'power2.in', repeat: -1, repeatDelay: 1.6 });
-    var carico = q('.segno .carico');
-    if (carico) g.to(carico, { x: 26, duration: 2.4, ease: 'power1.inOut',
-                               yoyo: true, repeat: -1, repeatDelay: 0.5 });
-    var bandiera = q('.segno .bandiera');
-    if (bandiera) g.to(bandiera, { scaleX: 0.82, duration: 1.15, yoyo: true, repeat: -1,
-                                   ease: 'sine.inOut', transformOrigin: '46px 19px' });
-    var timone = q('.segno .timone');
-    if (timone) g.to(timone, { rotation: 26, duration: 3.9, yoyo: true, repeat: -1,
-                               ease: 'sine.inOut', transformOrigin: '32px 43px' });
-    var alta = q('.segno .acqua.alta'), bassa = q('.segno .acqua.bassa');
-    if (alta) g.to(alta, { y: -1.6, duration: 4.3, yoyo: true, repeat: -1, ease: 'sine.inOut' });
-    if (bassa) g.to(bassa, { y: 1.6, duration: 4.3, yoyo: true, repeat: -1, ease: 'sine.inOut' });
-    var coda = document.querySelectorAll('.segno .coda > *');
-    if (coda.length) g.to(coda, { y: -3.2, duration: 2.7, yoyo: true, repeat: -1,
-                                  ease: 'sine.inOut', stagger: { each: 0.42, from: 'start' } });
-  }
-
-  // ====================================================================
-  // 8. start, stop, and the ways out
-  // ====================================================================
-  // The gate. A position:fixed inset:0 canvas intersects the viewport by
-  // construction, so an IntersectionObserver would never switch anything off.
-  // The real conditions are: the tab is in front, and there is open water to
-  // see. Below about 1100px the reading column plus its halo covers the whole
-  // window and the harbour is zero visible pixels — running a fluid nobody can
-  // see is the most expensive kind of nothing.
-  var LARGHEZZA_MINIMA = 1100;
-  function vale() {
-    return !fermo && document.visibilityState === 'visible' &&
-           window.innerWidth >= LARGHEZZA_MINIMA;
-  }
-  function accendi() {
-    if (vivo || !motore || !vale()) return;
-    vivo = true; ultimo = 0; requestAnimationFrame(fotogramma);
-  }
-  function spegni() {
-    vivo = false;
-    if (acceso) { tela.classList.remove('viva'); acceso = false; }
-  }
-
-  // Nothing to run: the CSS wash, the ten marks and the sounding line are the
-  // whole picture, and they are already correct.
-  if (!motore || fermo) {
-    raccogli(); misura(); segnaProfondita();
-    addEventListener('scroll', segnaProfondita, { passive: true });
-    addEventListener('resize', function () { misura(); segnaProfondita(); }, { passive: true });
-    addEventListener('load', function () { misura(); segnaProfondita(); });
-    window.__mare = { modo: fermo ? 'fermo' : 'niente', stato: function () {
-      return { modo: fermo ? 'fermo' : 'niente', altezzaDoc: altezzaDoc, galleggianti: [] }; } };
-    return;
-  }
-
-  leggiColore();
-  ridimensiona();
-  coreografia();
-  accendi();
-
-  document.addEventListener('visibilitychange', function () {
-    if (document.visibilityState === 'visible') { ultimo = 0; accendi(); } else spegni();
-  });
-
-  var attesa;
-  addEventListener('resize', function () {
-    clearTimeout(attesa);
-    attesa = setTimeout(function () {
-      ridimensiona();
-      if (vale()) accendi(); else spegni();
-    }, 160);
-  }, { passive: true });
-  // Measured at parse time is measured too early: a webfont landing after first
-  // paint moves every depth on the page.
-  addEventListener('load', ridimensiona);
-
-  addEventListener('pointermove', daPuntatore, { passive: true });
-  document.querySelectorAll('.tool').forEach(function (c) {
-    c.addEventListener('pointerenter', function () { tocca(c, 1); }, { passive: true });
-    c.addEventListener('focus', function () { tocca(c, 1.4); });
-  });
-
-  if (mqFermo && mqFermo.addEventListener) {
-    mqFermo.addEventListener('change', function (e) {
-      if (e.matches) {
-        spegni(); tela.classList.remove('viva'); acceso = false;
-        // put every mark back where it belongs before stopping
-        for (var i = 0; i < galleggianti.length; i++) {
-          var g = galleggianti[i];
-          if (g.svg) g.el.removeAttribute('transform'); else g.el.style.transform = '';
-        }
-        if (cresta) cresta.setAttribute('d', 'M0 14H1200');
-        if (window.gsap) gsap.globalTimeline.clear();
-      } else accendi();
+      }, { passive: true });
+      body.element.addEventListener('focus', function () {
+        addRippleAtElement(body.element, body.fixed ? 0.45 : 0.9);
+        if (!body.fixed && !reduced) body.vy -= 31 / body.mass;
+      });
     });
   }
-  if (window.matchMedia) {
-    var mqScuro = matchMedia('(prefers-color-scheme: dark)');
-    if (mqScuro.addEventListener) mqScuro.addEventListener('change', leggiColore);
+
+  function collectRibbons() {
+    ribbons = Array.prototype.map.call(document.querySelectorAll('.waterline'), function (svg, index) {
+      return {
+        svg: svg,
+        wash: svg.querySelector('.waterline__wash'),
+        line: svg.querySelector('.waterline__line'),
+        foam: svg.querySelector('.waterline__foam'),
+        hero: svg.classList.contains('waterline--hero'),
+        phase: index * 1.31,
+        documentY: 0
+      };
+    });
   }
 
-  // Driveable by hand: frames only arrive in a visible tab, and an animation
-  // that can only be checked by watching it cannot be checked at all.
+  function collectNavigation() {
+    sections = Array.prototype.slice.call(document.querySelectorAll('[data-section]'));
+    navLinks = Array.prototype.slice.call(document.querySelectorAll('.topbar a[href^="#"]'));
+  }
+
+  function measure() {
+    documentHeight = Math.max(document.documentElement.scrollHeight, document.body.scrollHeight, 1);
+    bodies.forEach(function (body) {
+      var rect = body.element.getBoundingClientRect();
+      body.documentX = rect.left + rect.width * 0.5 + (window.scrollX || 0);
+      body.documentY = rect.top + rect.height * 0.5 + (window.scrollY || 0);
+    });
+    ribbons.forEach(function (ribbon) {
+      var rect = ribbon.svg.getBoundingClientRect();
+      ribbon.documentY = rect.top + rect.height * 0.5 + (window.scrollY || 0);
+    });
+    updateNavigation(true);
+  }
+
+  function resize() {
+    width = Math.max(1, window.innerWidth);
+    height = Math.max(1, window.innerHeight);
+    dpr = Math.min(window.devicePixelRatio || 1, economical || width < 980 ? 1 : 1.7);
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
+    canvas.style.width = width + 'px';
+    canvas.style.height = height + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    frameInterval = economical || width < 980 ? 1000 / 30 : 1000 / 60;
+    measure();
+    drawOcean();
+  }
+
+  function addRipple(x, y, strength) {
+    if (reduced) return;
+    ripples.push({
+      x: clamp(x, 0, width), y: clamp(y, 0, height),
+      radius: 8, life: 1, strength: strength || 1
+    });
+    if (ripples.length > 18) ripples.shift();
+  }
+
+  function addRippleAtElement(element, strength) {
+    var rect = element.getBoundingClientRect();
+    if (rect.bottom < 0 || rect.top > height) return;
+    addRipple(rect.left + rect.width * 0.5, rect.top + rect.height * 0.78, strength);
+  }
+
+  function updateScroll(dt) {
+    var current = window.scrollY || 0;
+    var raw = (current - previousScrollY) / Math.max(dt, 1 / 120);
+    raw = clamp(raw, -5200, 5200);
+    previousVelocity = scrollVelocity;
+    scrollVelocity = mix(scrollVelocity, raw, 15, dt);
+    var deltaVelocity = scrollVelocity - previousVelocity;
+    var speedEnergy = clamp(Math.abs(scrollVelocity) / 2100, 0, 1);
+    scrollEnergy = Math.max(scrollEnergy * Math.exp(-2.15 * dt), speedEnergy);
+    previousScrollY = current;
+    scrollY = current;
+
+    if (!reduced && Math.abs(deltaVelocity) > 95) {
+      var impulse = clamp(deltaVelocity / 820, -1.7, 1.7);
+      bodies.forEach(function (body) {
+        body.visible = body.documentY - current > -360 && body.documentY - current < height + 360;
+        if (body.fixed || !body.visible) return;
+        var p = body.preset;
+        body.vy += impulse * p.impulseY / body.mass;
+        body.vx += impulse * p.impulseX * body.drift / body.mass;
+        body.vr += impulse * p.impulseR * body.drift / body.mass;
+      });
+      if (Math.abs(impulse) > 0.34) {
+        var side = impulse > 0 ? width * 0.72 : width * 0.28;
+        addRipple(side, height * (0.35 + (Math.abs(current / Math.max(documentHeight, 1)) % 0.4)), Math.min(1.3, Math.abs(impulse)));
+      }
+    }
+  }
+
+  function integrateBody(body, dt) {
+    if (body.fixed) return;
+
+    var viewportY = body.documentY - scrollY;
+    body.visible = viewportY > -360 && viewportY < height + 360;
+    if (!body.visible) {
+      body.vx *= Math.exp(-5 * dt);
+      body.vy *= Math.exp(-5 * dt);
+      body.vr *= Math.exp(-5 * dt);
+      return;
+    }
+
+    var p = body.preset;
+    var mobileScale = width < 680 ? 0.67 : width < 980 ? 0.84 : 1;
+    var speed = clamp(scrollVelocity / 2500, -1, 1);
+    var wave = waveSignal(body.documentX, body.phase, time);
+    var slope = waveSlope(body.documentX, body.phase, time);
+    var targetY = wave * p.waveY * (0.72 + scrollEnergy * 0.46) + speed * p.scrollLagY;
+    var targetX = Math.cos(time * 0.51 + body.phase) * p.waveX + speed * p.scrollLagX * body.drift;
+    var targetR = slope * p.maxR * 0.18 + speed * p.scrollRoll * body.drift;
+    targetY *= mobileScale;
+    targetX *= mobileScale;
+    targetR *= mobileScale;
+
+    var stiffness = p.stiffness;
+    var damping = 2 * p.dampingRatio * Math.sqrt(stiffness * body.mass);
+    var ax = (stiffness * (targetX - body.x) - damping * body.vx) / body.mass;
+    var ay = (stiffness * (targetY - body.y) - damping * body.vy) / body.mass;
+    var ar = (stiffness * 0.72 * (targetR - body.rotation) - damping * 0.72 * body.vr) / body.mass;
+
+    body.vx += ax * dt;
+    body.vy += ay * dt;
+    body.vr += ar * dt;
+    body.x += body.vx * dt;
+    body.y += body.vy * dt;
+    body.rotation += body.vr * dt;
+
+    var maxY = p.maxY * mobileScale;
+    var maxX = p.maxX * mobileScale;
+    var maxR = p.maxR * mobileScale;
+    if (Math.abs(body.y) > maxY) { body.y = clamp(body.y, -maxY, maxY); body.vy *= -0.16; }
+    if (Math.abs(body.x) > maxX) { body.x = clamp(body.x, -maxX, maxX); body.vx *= -0.12; }
+    if (Math.abs(body.rotation) > maxR) { body.rotation = clamp(body.rotation, -maxR, maxR); body.vr *= -0.12; }
+
+    body.element.style.transform = 'translate3d(' + body.x.toFixed(2) + 'px,' + body.y.toFixed(2) +
+      'px,0) rotate(' + body.rotation.toFixed(2) + 'deg) scale(var(--scale,1))';
+  }
+
+  function resetBodies() {
+    bodies.forEach(function (body) {
+      body.x = body.y = body.rotation = body.vx = body.vy = body.vr = 0;
+      body.element.style.transform = body.kind === 'buoy' ? 'scale(var(--scale,1))' : '';
+    });
+  }
+
+  function traceWavePath(base, amplitude, phase, points, viewWidth) {
+    var path = '';
+    for (var i = 0; i <= points; i++) {
+      var x = viewWidth * i / points;
+      var signal = waveSignal(x * (width / viewWidth), phase, time);
+      var local = Math.sin(i * 0.92 + time * 1.6 + phase) * scrollEnergy * amplitude * 0.38;
+      var y = base + signal * amplitude + local;
+      path += (i ? 'L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(2);
+    }
+    return path;
+  }
+
+  function drawRibbons() {
+    ribbons.forEach(function (ribbon) {
+      var viewportY = ribbon.documentY - scrollY;
+      if (viewportY < -300 || viewportY > height + 300) return;
+      var base = ribbon.hero ? 58 : 48;
+      var amplitude = reduced ? 0 : (ribbon.hero ? 7.2 : 3.7) * (1 + scrollEnergy * 0.88);
+      var line = traceWavePath(base, amplitude, ribbon.phase, ribbon.hero ? 50 : 42, 1000);
+      var viewHeight = ribbon.hero ? 120 : 96;
+      if (ribbon.line) ribbon.line.setAttribute('d', line);
+      if (ribbon.foam) ribbon.foam.setAttribute('d', line);
+      if (ribbon.wash) ribbon.wash.setAttribute('d', line + 'L1000 ' + viewHeight + 'L0 ' + viewHeight + 'Z');
+    });
+  }
+
+  function canvasWaveY(x, base, band) {
+    var amplitude = (band === 0 ? 7 : 3.4 + band * 0.42) * (1 + scrollEnergy * (band === 0 ? 1.45 : 0.62));
+    return base + waveSignal(x, band * 1.42, time) * amplitude +
+      Math.sin(x * 0.027 + time * 1.4 + band) * scrollEnergy * 2.8;
+  }
+
+  function makeCanvasPath(base, band) {
+    ctx.beginPath();
+    for (var x = -12; x <= width + 12; x += economical ? 18 : 12) {
+      var y = canvasWaveY(x, base, band);
+      if (x < 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+  }
+
+  function drawOcean() {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+
+    var descent = reduced ? 0 : clamp(scrollY / Math.max(height * 0.82, 1), 0, 1);
+    // At the top, the shared sea begins below the reading area; the hero has
+    // its own local waterline beside the headline. As the reader descends, the
+    // surface passes overhead and the rest of the page sits inside one harbour.
+    var surface = height * 0.89 - descent * height * 1.04;
+    var dark = darkQuery.matches;
+
+    makeCanvasPath(surface, 0);
+    ctx.lineTo(width + 20, height + 20);
+    ctx.lineTo(-20, height + 20);
+    ctx.closePath();
+    var wash = ctx.createLinearGradient(0, Math.max(-50, surface), 0, height);
+    wash.addColorStop(0, rgba(palette.sea, dark ? 0.18 : 0.11));
+    wash.addColorStop(1, rgba(palette.deep, dark ? 0.27 : 0.17));
+    ctx.fillStyle = wash;
+    ctx.fill();
+
+    makeCanvasPath(surface, 0);
+    ctx.strokeStyle = rgba(palette.sea, dark ? 0.78 : 0.54);
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([]);
+    ctx.stroke();
+
+    if (!reduced) {
+      makeCanvasPath(surface - 2.3, 0);
+      ctx.strokeStyle = rgba(palette.foam, dark ? 0.68 : 0.82);
+      ctx.lineWidth = 5;
+      ctx.lineCap = 'round';
+      ctx.setLineDash([1, 18]);
+      ctx.stroke();
+      ctx.lineCap = 'butt';
+      ctx.setLineDash([]);
+    }
+
+    var bands = economical ? 5 : 7;
+    var gap = Math.max(68, height / 7.5);
+    for (var i = 1; i <= bands; i++) {
+      var base = surface + gap * i;
+      if (base < -30 || base > height + 35) continue;
+      makeCanvasPath(base, i);
+      ctx.strokeStyle = rgba(palette.sea, (dark ? 0.2 : 0.16) * (1 - i / (bands + 2)) + 0.035);
+      ctx.lineWidth = i % 3 === 0 ? 1.35 : 0.8;
+      ctx.stroke();
+    }
+
+    drawRipples();
+  }
+
+  function drawRipples() {
+    for (var i = ripples.length - 1; i >= 0; i--) {
+      var ripple = ripples[i];
+      ctx.beginPath();
+      ctx.ellipse(ripple.x, ripple.y, ripple.radius * 1.8, ripple.radius * 0.48, 0, Math.PI * 1.06, Math.PI * 1.94);
+      ctx.strokeStyle = rgba(palette.sea, ripple.life * 0.34 * ripple.strength);
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+      if (ripple.life <= 0) ripples.splice(i, 1);
+    }
+  }
+
+  function advanceRipples(dt) {
+    ripples.forEach(function (ripple) {
+      ripple.radius += dt * (48 + ripple.strength * 22);
+      ripple.life -= dt * 0.72;
+    });
+  }
+
+  function updateNavigation(force) {
+    var currentY = window.scrollY || 0;
+    if (!force && Math.abs(currentY - lastNavY) < 1) return;
+    lastNavY = currentY;
+    var maxScroll = Math.max(1, documentHeight - window.innerHeight);
+    if (progress) progress.style.transform = 'scaleX(' + clamp(currentY / maxScroll, 0, 1).toFixed(4) + ')';
+    if (topbar) topbar.classList.toggle('is-scrolled', currentY > 18);
+
+    var marker = currentY + window.innerHeight * 0.34;
+    var active = sections[0] ? sections[0].id : '';
+    sections.forEach(function (section) {
+      if (section.offsetTop <= marker) active = section.id;
+    });
+    navLinks.forEach(function (link) {
+      var matches = link.getAttribute('href') === '#' + active;
+      if (matches) link.setAttribute('aria-current', 'location');
+      else link.removeAttribute('aria-current');
+    });
+  }
+
+  function tick(now) {
+    if (!running) return;
+    raf = requestAnimationFrame(tick);
+    if (now - lastFrame < frameInterval) return;
+    var elapsed = lastFrame ? Math.min((now - lastFrame) / 1000, .12) : 1 / 60;
+    lastFrame = now;
+    time += reduced ? 0 : elapsed;
+    updateScroll(elapsed);
+    updateNavigation(false);
+
+    if (!reduced) {
+      var steps = Math.max(1, Math.ceil(elapsed / (1 / 60)));
+      var step = elapsed / steps;
+      for (var sub = 0; sub < steps; sub++) {
+        bodies.forEach(function (body) { integrateBody(body, step); });
+        advanceRipples(step);
+      }
+    }
+    drawRibbons();
+    drawOcean();
+  }
+
+  function start() {
+    if (running || reduced || document.visibilityState === 'hidden') return;
+    running = true;
+    lastFrame = 0;
+    previousScrollY = window.scrollY || 0;
+    scrollY = previousScrollY;
+    raf = requestAnimationFrame(tick);
+  }
+
+  function stop() {
+    running = false;
+    if (raf) cancelAnimationFrame(raf);
+    raf = 0;
+  }
+
+  function setupReveals() {
+    if (reduced || !window.gsap || !('IntersectionObserver' in window)) return;
+    var gsap = window.gsap;
+    var heroItems = document.querySelectorAll('.hero [data-reveal]');
+    if (heroItems.length) {
+      var timeline = gsap.timeline({ defaults: { duration: 0.78, ease: 'power3.out' } });
+      timeline.from(heroItems, { opacity: 0, y: 28, stagger: 0.085, clearProps: 'transform,opacity' });
+      choreography.push(timeline);
+    }
+
+    var revealItems = Array.prototype.slice.call(document.querySelectorAll('main > section:not(.hero) [data-reveal]'));
+    revealItems.forEach(function (element) { gsap.set(element, { opacity: 0, y: 26 }); });
+    revealObserver = new IntersectionObserver(function (entries, observer) {
+      entries.forEach(function (entry) {
+        if (!entry.isIntersecting) return;
+        var tween = gsap.to(entry.target, { opacity: 1, y: 0, duration: 0.68, ease: 'power3.out', clearProps: 'transform,opacity' });
+        choreography.push(tween);
+        observer.unobserve(entry.target);
+      });
+    }, { rootMargin: '0px 0px -9% 0px', threshold: 0.08 });
+    revealItems.forEach(function (element) { revealObserver.observe(element); });
+  }
+
+  function setupIconChoreography() {
+    if (reduced || !window.gsap) return;
+    var gsap = window.gsap;
+    function tween(selector, vars) {
+      var elements = document.querySelectorAll(selector);
+      if (!elements.length) return;
+      choreography.push(gsap.to(elements, vars));
+    }
+    tween('.segno .fascio,.hero-tool__icon .fascio', { rotation: 8, duration: 3.4, yoyo: true, repeat: -1, ease: 'sine.inOut', transformOrigin: '32px 22px' });
+    tween('.segno .sguardo,.hero-tool__icon .sguardo', { rotation: -10, duration: 4.1, yoyo: true, repeat: -1, ease: 'sine.inOut', transformOrigin: '32px 16px' });
+    tween('.segno .passa,.hero-tool__icon .passa', { x: 24, duration: 2.7, yoyo: true, repeat: -1, repeatDelay: .7, ease: 'power1.inOut' });
+    tween('.segno .scivola', { x: 17, y: 12, duration: 2.2, yoyo: true, repeat: -1, repeatDelay: 1.1, ease: 'power2.inOut' });
+    tween('.segno .carico,.hero-tool__icon .carico', { x: 25, duration: 2.5, yoyo: true, repeat: -1, repeatDelay: .45, ease: 'power1.inOut' });
+    tween('.segno .bandiera', { scaleX: .8, duration: 1.25, yoyo: true, repeat: -1, ease: 'sine.inOut', transformOrigin: '46px 19px' });
+    tween('.segno .timone', { rotation: 24, duration: 3.8, yoyo: true, repeat: -1, ease: 'sine.inOut', transformOrigin: '32px 43px' });
+    tween('.segno .coda > *', { y: -3, duration: 2.6, yoyo: true, repeat: -1, ease: 'sine.inOut', stagger: .38 });
+  }
+
+  function stopAnimations() {
+    if (revealObserver) { revealObserver.disconnect(); revealObserver = null; }
+    choreography.forEach(function (animation) { if (animation && animation.kill) animation.kill(); });
+    choreography.length = 0;
+    if (window.gsap) {
+      window.gsap.set('[data-reveal]', { clearProps: 'transform,opacity' });
+      window.gsap.set('.segno *,.hero-tool__icon *', { clearProps: 'transform,opacity' });
+    }
+  }
+
+  function onMotionPreference(event) {
+    reduced = event.matches;
+    stop();
+    stopAnimations();
+    resetBodies();
+    ripples.length = 0;
+    if (!reduced) {
+      setupIconChoreography();
+      start();
+    }
+    drawRibbons();
+    drawOcean();
+  }
+
+  function setupCopyButton() {
+    var button = document.querySelector('[data-copy]');
+    var status = document.querySelector('[data-copy-status]');
+    if (!button || !status) return;
+    var commands = 'pipx install git+https://github.com/nerln/faro\nfaro\n\npipx install git+https://github.com/nerln/capitaneria\ncapitaneria';
+    button.addEventListener('click', function () {
+      if (!navigator.clipboard || !navigator.clipboard.writeText) {
+        status.textContent = 'select the commands to copy';
+        return;
+      }
+      navigator.clipboard.writeText(commands).then(function () {
+        status.textContent = 'copied to clipboard';
+        button.textContent = 'copied';
+        window.setTimeout(function () { status.textContent = ''; button.textContent = 'copy'; }, 2400);
+      }).catch(function () {
+        status.textContent = 'copy unavailable';
+      });
+    });
+  }
+
+  var resizeTimer = 0;
+  window.addEventListener('resize', function () {
+    clearTimeout(resizeTimer);
+    resizeTimer = window.setTimeout(resize, 120);
+  }, { passive: true });
+
+  window.addEventListener('scroll', function () {
+    updateNavigation(false);
+    if (reduced) {
+      scrollY = window.scrollY || 0;
+      previousScrollY = scrollY;
+      drawRibbons();
+      drawOcean();
+    }
+  }, { passive: true });
+
+  window.addEventListener('pointermove', function (event) {
+    if (reduced) return;
+    var now = performance.now();
+    var dx = event.clientX - pointer.x;
+    var dy = event.clientY - pointer.y;
+    if (now - pointer.at > 62 && dx * dx + dy * dy > 360) {
+      addRipple(event.clientX, event.clientY, 0.42);
+      pointer.at = now;
+    }
+    pointer.x = event.clientX;
+    pointer.y = event.clientY;
+  }, { passive: true });
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'hidden') stop();
+    else start();
+  });
+
+  reduceQuery.addEventListener('change', onMotionPreference);
+  darkQuery.addEventListener('change', function () { readPalette(); drawOcean(); });
+
+  readPalette();
+  collectBodies();
+  collectRibbons();
+  collectNavigation();
+  setupCopyButton();
+  resize();
+  setupReveals();
+  setupIconChoreography();
+  start();
+
+  window.addEventListener('load', function () {
+    measure();
+    previousScrollY = window.scrollY || 0;
+    scrollY = previousScrollY;
+  });
+
+  /* A compact inspection surface for browser tests. It exposes no control over
+   * the page, only the measurable state needed to verify the physical rules. */
   window.__mare = {
-    modo: modo,
-    passo: function (dt) { t += (dt || 1 / 60); avanza(dt || 1 / 60); },
-    smorzo: smorzo, orbita: orbita,
+    modo: 'canvas2d-spring',
     stato: function () {
       return {
-        modo: modo, tempo: t, vivo: vivo, larg: larg, alt: alt, dpr: dpr,
-        altezzaDoc: altezzaDoc, scia: scia, inchiostro: inchiostro, forza: forzaInk,
-        galleggianti: galleggianti.map(function (g) {
-          return { nome: g.nome, d: +g.d.toFixed(3), x: Math.round(g.x), fisso: g.fisso,
-                   dec: g.dec.map(function (v) { return +v.toFixed(3); }),
-                   trasf: g.svg ? (g.el.getAttribute('transform') || '') : (g.el.style.transform || '') };
+        modo: 'canvas2d-spring', reduced: reduced, running: running,
+        width: width, height: height, dpr: dpr,
+        scrollVelocity: +scrollVelocity.toFixed(2),
+        scrollEnergy: +scrollEnergy.toFixed(3),
+        ripples: ripples.length,
+        bodies: bodies.map(function (body) {
+          return {
+            name: body.name, kind: body.kind, fixed: body.fixed,
+            x: +body.x.toFixed(2), y: +body.y.toFixed(2),
+            rotation: +body.rotation.toFixed(2), visible: body.visible
+          };
         })
       };
     }
