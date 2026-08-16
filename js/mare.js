@@ -43,7 +43,28 @@
   var lastFrame = 0;
   var raf = 0;
   var running = false;
-  var frameInterval = economical ? 1000 / 30 : 1000 / 60;
+  /* Quality is measured, not assumed.
+   *
+   * The previous rule was `width < 980 ? 30fps : 60fps`, which gives every
+   * phone held upright half the frame rate whatever silicon is inside it — and
+   * a quarter of it on a 120Hz screen. Screen width says nothing about how fast
+   * a device draws. So the loop now runs at whatever rate the display offers
+   * and watches what its own work costs; if the median frame is too expensive
+   * it steps down, and when there is room again it steps back up.
+   *
+   * Level 2 is everything. Level 1 halves the wave bands and coarsens the
+   * sampling. Level 0 is the cheapest drawing that is still the same picture.
+   * Only quality moves — the physics is identical at every level, so a slow
+   * phone shows the same harbour, drawn with fewer strokes. */
+  var LIVELLI = [
+    { dprMax: 1.0, bande: 4, passoX: 26, sotto: 1 },
+    { dprMax: 1.5, bande: 5, passoX: 18, sotto: 2 },
+    { dprMax: 2.0, bande: 7, passoX: 12, sotto: 2 }
+  ];
+  var livello = economical ? 0 : 2;
+  var costi = [], COSTI_MAX = 24, ultimoCambio = 0;
+  var BUDGET_ALTO = 7.5;   // ms of our own work: above this we are eating the frame
+  var BUDGET_BASSO = 3.0;  // below this there is room to give some back
 
   var scrollY = window.scrollY || 0;
   var previousScrollY = scrollY;
@@ -192,16 +213,35 @@
     updateNavigation(true);
   }
 
-  function resize() {
-    width = Math.max(1, window.innerWidth);
-    height = Math.max(1, window.innerHeight);
-    dpr = Math.min(window.devicePixelRatio || 1, economical || width < 980 ? 1 : 1.7);
+  function applicaLivello() {
+    var L = LIVELLI[livello];
+    // A phone renders at 2x or 3x. Drawing at 1x and letting the compositor
+    // scale it up is what makes hairlines soft and makes them shimmer as they
+    // move: the page reads as unsteady even at a perfect frame rate. The water
+    // is ten polylines — it can afford real pixels.
+    var nuovo = Math.min(window.devicePixelRatio || 1, L.dprMax);
+    if (Math.abs(nuovo - dpr) < 0.01) return false;
+    dpr = nuovo;
+    applicaBuffer();
+    return true;
+  }
+
+  /* Measured at 0.018 ms for a 750x1624 buffer — a tenth of one frame's
+     drawing. Reallocating was never the expensive part of a resize. */
+  function applicaBuffer() {
     canvas.width = Math.round(width * dpr);
     canvas.height = Math.round(height * dpr);
     canvas.style.width = width + 'px';
     canvas.style.height = height + 'px';
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    frameInterval = economical || width < 980 ? 1000 / 30 : 1000 / 60;
+  }
+
+  function resize() {
+    width = Math.max(1, window.innerWidth);
+    height = Math.max(1, window.innerHeight);
+    dpr = 0;                       // force applicaLivello to rebuild the buffer
+    ultimaLarghezza = width;
+    applicaLivello();
     measure();
     drawOcean();
   }
@@ -339,7 +379,8 @@
 
   function makeCanvasPath(base, band) {
     ctx.beginPath();
-    for (var x = -12; x <= width + 12; x += economical ? 18 : 12) {
+    var passoX = LIVELLI[livello].passoX;
+    for (var x = -12; x <= width + 12; x += passoX) {
       var y = canvasWaveY(x, base, band);
       if (x < 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     }
@@ -383,7 +424,7 @@
       ctx.setLineDash([]);
     }
 
-    var bands = economical ? 5 : 7;
+    var bands = LIVELLI[livello].bande;
     var gap = Math.max(68, height / 7.5);
     for (var i = 1; i <= bands; i++) {
       var base = surface + gap * i;
@@ -439,15 +480,25 @@
   function tick(now) {
     if (!running) return;
     raf = requestAnimationFrame(tick);
-    if (now - lastFrame < frameInterval) return;
+    // No artificial interval. requestAnimationFrame already paces to the
+    // display; throttling it to a value that is not a divisor of the refresh
+    // produces uneven spacing, which the eye reads as stutter even when the
+    // average rate is fine.
     var elapsed = lastFrame ? Math.min((now - lastFrame) / 1000, .12) : 1 / 60;
     lastFrame = now;
+    var inizio = performance.now();
+    passo(elapsed);
+    registraCosto(performance.now() - inizio, now);
+  }
+
+  function passo(elapsed) {
     time += reduced ? 0 : elapsed;
     updateScroll(elapsed);
     updateNavigation(false);
 
     if (!reduced) {
-      var steps = Math.max(1, Math.ceil(elapsed / (1 / 60)));
+      var L = LIVELLI[livello];
+      var steps = Math.max(1, Math.min(L.sotto, Math.ceil(elapsed / (1 / 60))));
       var step = elapsed / steps;
       for (var sub = 0; sub < steps; sub++) {
         bodies.forEach(function (body) { integrateBody(body, step); });
@@ -456,6 +507,24 @@
     }
     drawRibbons();
     drawOcean();
+  }
+
+  /* The median of the last two dozen frames, not the last one: a single slow
+   * frame is a garbage collection, not a verdict on the device. */
+  function registraCosto(costo, now) {
+    costi.push(costo);
+    if (costi.length > COSTI_MAX) costi.shift();
+    if (costi.length < COSTI_MAX || now - ultimoCambio < 900) return;
+    var ordinati = costi.slice().sort(function (x, y) { return x - y; });
+    var mediana = ordinati[ordinati.length >> 1];
+    var prima = livello;
+    if (mediana > BUDGET_ALTO && livello > 0) livello--;
+    else if (mediana < BUDGET_BASSO && livello < LIVELLI.length - 1) livello++;
+    if (livello !== prima) {
+      applicaLivello();
+      costi.length = 0;
+      ultimoCambio = now;
+    }
   }
 
   function start() {
@@ -558,10 +627,41 @@
     });
   }
 
-  var resizeTimer = 0;
+  /* On iOS Safari, scrolling hides and shows the URL bar, and every toggle
+   * fires `resize`. Treating that as a real resize means reallocating the
+   * canvas and re-measuring every body IN THE MIDDLE OF A SCROLL, which is
+   * exactly when the page must not stall — and it is the classic reason a
+   * mobile page feels like it catches.
+   *
+   * It is safe to ignore, and the stylesheet is why: the hero is sized in svh
+   * and the harbour in vh, neither of which moves when the bar toggles. The
+   * document does not reflow, so no measurement has gone stale. Only the
+   * visible height changed, so only the height is taken.
+   *
+   * The backing store is never shrunk either: keeping the tallest buffer seen
+   * means the bar can come and go without a single reallocation. */
+  var resizeTimer = 0, ultimaLarghezza = 0;
+  function ridimensionaLeggero() {
+    height = Math.max(1, window.innerHeight);
+    // The buffer is resized, because that costs 0.018 ms. What is skipped is
+    // measure(): fourteen getBoundingClientRect calls plus the navigation pass,
+    // run 120 ms late, in the middle of the scroll that caused them. Skipping it
+    // is not an optimisation, it is correctness — nothing it measures has moved.
+    applicaBuffer();
+    drawOcean();
+  }
   window.addEventListener('resize', function () {
+    var w = window.innerWidth, h = window.innerHeight;
+    if (w === ultimaLarghezza && Math.abs(h - height) <= 180) {
+      ridimensionaLeggero();
+      return;
+    }
     clearTimeout(resizeTimer);
-    resizeTimer = window.setTimeout(resize, 120);
+    resizeTimer = window.setTimeout(function () { ultimaLarghezza = window.innerWidth; resize(); }, 120);
+  }, { passive: true });
+  window.addEventListener('orientationchange', function () {
+    clearTimeout(resizeTimer);
+    resizeTimer = window.setTimeout(function () { ultimaLarghezza = window.innerWidth; resize(); }, 220);
   }, { passive: true });
 
   window.addEventListener('scroll', function () {
@@ -585,6 +685,28 @@
     }
     pointer.x = event.clientX;
     pointer.y = event.clientY;
+  }, { passive: true });
+
+  /* A phone has no hover, so without this the water answers nothing a finger
+   * does. pointermove alone is not enough: during a scroll gesture the browser
+   * sends pointercancel and stops, so a touch that turns into a flick would
+   * leave no mark at all. A touch is worth a ripple on its own. */
+  window.addEventListener('touchstart', function (event) {
+    if (reduced || !event.touches || !event.touches.length) return;
+    for (var i = 0; i < event.touches.length && i < 3; i++) {
+      addRipple(event.touches[i].clientX, event.touches[i].clientY, 0.85);
+    }
+  }, { passive: true });
+
+  window.addEventListener('touchmove', function (event) {
+    if (reduced || !event.touches || !event.touches.length) return;
+    var now = performance.now();
+    if (now - pointer.at < 70) return;
+    var t = event.touches[0];
+    var dx = t.clientX - pointer.x, dy = t.clientY - pointer.y;
+    if (dx * dx + dy * dy < 300) return;
+    addRipple(t.clientX, t.clientY, 0.5);
+    pointer.x = t.clientX; pointer.y = t.clientY; pointer.at = now;
   }, { passive: true });
 
   document.addEventListener('visibilitychange', function () {
@@ -615,9 +737,24 @@
    * the page, only the measurable state needed to verify the physical rules. */
   window.__mare = {
     modo: 'canvas2d-spring',
+    passo: function (dt) { passo(dt || 1 / 60); },
+    costoFrame: function (n) {
+      var k = n || 60, t0 = performance.now();
+      for (var i = 0; i < k; i++) passo(1 / 60);
+      return (performance.now() - t0) / k;
+    },
+    livello: function (v) { if (v != null) { livello = v; applicaLivello(); } return livello; },
+    /* Feeds the quality governor a controlled cost so its decisions can be
+       checked without needing a slow device to hand. */
+    provaGoverno: function (msFinti, quanti) {
+      var t = 10000;
+      for (var i = 0; i < (quanti || 200); i++) { t += 16.7; registraCosto(msFinti, t); }
+      return livello;
+    },
     stato: function () {
       return {
         modo: 'canvas2d-spring', reduced: reduced, running: running,
+        livello: livello, bande: LIVELLI[livello].bande, passoX: LIVELLI[livello].passoX,
         width: width, height: height, dpr: dpr,
         scrollVelocity: +scrollVelocity.toFixed(2),
         scrollEnergy: +scrollEnergy.toFixed(3),

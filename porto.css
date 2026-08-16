@@ -209,6 +209,28 @@ main,.footer{position:relative;z-index:1}
   .fleet{padding-top:104px}.fleet__heading{margin-bottom:68px}.fleet-row{min-height:570px;padding:62px 0 82px}.fleet-row__vessels,.fleet-row--reverse .fleet-row__vessels{grid-template-columns:1fr;gap:30px;padding-top:32px}.fleet-row__vessels .vessel:nth-child(2),.fleet-row--reverse .fleet-row__vessels .vessel:first-child{margin-top:22px}.fleet-row--reverse .fleet-row__vessels .vessel:nth-child(2){margin-top:22px}.waterline--row{top:35%;height:58%}.vessel__inside{grid-template-columns:116px minmax(0,1fr);gap:16px;min-height:174px;padding:18px 0}.vessel__float{min-height:110px;padding:18px 52px 18px 14px}.vessel__name{font-size:.92rem}.vessel__name small{display:block;font-size:.52em;margin:7px 0 0}.vessel__copy{font-size:.8rem}.vessel__arrow{top:13px;right:12px}.vessel__keel{grid-column:2;margin-top:-12px}.segno{width:45px;height:45px;right:8px;top:47px}
   .findings{padding:104px 0}.findings__intro{margin-bottom:58px}.install{padding:96px 0}.install__grid{gap:40px}.terminal{width:100%;margin-left:0}.terminal pre{padding:24px 20px 30px;font-size:.7rem}
 }
+/* --- mobile: what the compositor pays for on every scrolled frame ---------
+   Two effects that are nearly free on a desktop GPU and expensive on a phone,
+   removed where they cost the most and are worth the least.
+
+   1. The bar's backdrop blur. Its background is already 92% opaque paper, so a
+      16px blur behind it is doing almost nothing you can see — while a blurred
+      backdrop on a fixed, full-width element has to be resampled every frame
+      the page moves underneath it. Taking the blur and adding four points of
+      opacity is a change almost nobody can see and the compositor feels at
+      once.
+
+   2. The hero waterline's drop-shadow. That SVG's path is rewritten on every
+      single frame by the wave code, and a filter over changing geometry has to
+      be recomputed every time. The wash, the line and the foam still carry the
+      shape; only the soft shadow under it goes.
+
+   Both are kept in full above 980px, where the desktop design is untouched. */
+@media(max-width:980px){
+  .topbar{backdrop-filter:none;background:color-mix(in srgb,var(--paper) 96%,transparent)}
+  .topbar.is-scrolled{background:var(--paper)}
+  .waterline--hero{filter:none}
+}
 @media(prefers-reduced-motion:reduce){
   html{scroll-behavior:auto}.hero__scroll i::after{animation:none}.vessel__float,.metric{will-change:auto!important;transform:none!important}.hero-tool{will-change:auto!important;transform:scale(var(--scale,1))!important}.button,.vessel__arrow{transition:none!important}
 }
