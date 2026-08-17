@@ -230,6 +230,34 @@ main,.footer{position:relative;z-index:1}
   .topbar{backdrop-filter:none;background:color-mix(in srgb,var(--paper) 96%,transparent)}
   .topbar.is-scrolled{background:var(--paper)}
   .waterline--hero{filter:none}
+
+  /* One sea, not two. On a desktop the hero is two columns and this SVG is the
+     harbour's own little pool beside the headline. Stacked into one column it
+     stops being a pool and becomes a rectangle: its wash is a filled box the
+     width of the shell, so it shows two hard vertical edges and a flat bottom
+     across the middle of the page — a panel, not water.
+
+     The canvas draws the shared surface at exactly this height now, full bleed
+     and gradient shaded, so the pool is redundant here. Only the drawing goes:
+     the <svg> keeps its box, because its position is what tells the canvas
+     where the waterline is. */
+  .waterline--hero .waterline__wash,
+  .waterline--hero .waterline__line,
+  .waterline--hero .waterline__foam{display:none}
+  .hero__harbour::before{opacity:.5}
+
+  /* The same problem one section down, and the same cause. A fleet row puts
+     its waterline at 35% with the two vessels straddling it left and right.
+     Stacked, they sit one above the other and that fraction lands at 64% of
+     the row — measured nine pixels above the start of the second vessel's
+     paragraph, whose wash then swallowed the whole thing.
+
+     So on a phone the water goes UNDER both vessels rather than between them:
+     they ride at anchor above one surface instead of being cut in half by it.
+     And it runs edge to edge, because a filled box the width of the text
+     column shows two vertical seams down the middle of the page and stops
+     looking like water at all. */
+  .waterline--row{top:68%;height:40%;left:50%;width:100vw;margin-left:-50vw}
 }
 @media(prefers-reduced-motion:reduce){
   html{scroll-behavior:auto}.hero__scroll i::after{animation:none}.vessel__float,.metric{will-change:auto!important;transform:none!important}.hero-tool{will-change:auto!important;transform:scale(var(--scale,1))!important}.button,.vessel__arrow{transition:none!important}

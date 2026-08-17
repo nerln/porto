@@ -77,6 +77,7 @@
   var ripples = [];
   var bodies = [];
   var ribbons = [];
+  var ancoraMare = 0;   // document Y of the hero waterline: where the sea begins
   var sections = [];
   var navLinks = [];
   var choreography = [];
@@ -103,6 +104,9 @@
       maxY: 52, maxX: 25, maxR: 6.2
     }
   };
+
+  /* The single-column breakpoint, and the same number the stylesheet uses. */
+  function impilato() { return width < 980; }
 
   function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
@@ -209,6 +213,13 @@
     ribbons.forEach(function (ribbon) {
       var rect = ribbon.svg.getBoundingClientRect();
       ribbon.documentY = rect.top + rect.height * 0.5 + (window.scrollY || 0);
+      // The hero waterline is where this harbour's water actually is, so it is
+      // where the shared sea starts. Anchoring to it instead of to a fraction
+      // of the window is the whole fix: a fraction knows nothing about what is
+      // laid out underneath it, and on a phone — one column instead of two —
+      // 89% of the viewport landed exactly on the line of facts and drew a wave
+      // through the middle of the words.
+      if (ribbon.hero) ancoraMare = ribbon.documentY;
     });
     updateNavigation(true);
   }
@@ -390,11 +401,23 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, width, height);
 
-    var descent = reduced ? 0 : clamp(scrollY / Math.max(height * 0.82, 1), 0, 1);
-    // At the top, the shared sea begins below the reading area; the hero has
-    // its own local waterline beside the headline. As the reader descends, the
-    // surface passes overhead and the rest of the page sits inside one harbour.
-    var surface = height * 0.89 - descent * height * 1.04;
+    /* Two layouts, two rules, because the geometry really is different.
+     *
+     * Wide: the hero is two columns. The harbour has its own pool on the right
+     * and the shared sea starts lower down, on the left, under the copy — they
+     * are at different heights on purpose and they never meet. That is Codex's
+     * arrangement and it is right, so it is untouched.
+     *
+     * Stacked: one column, and the two waters are now vertically on top of one
+     * another. A surface placed at 89% of the WINDOW knows nothing about what
+     * is laid out underneath it, and on a phone that fraction landed on the
+     * line of facts and drew a wave through the middle of the words — measured
+     * at 723px against a row of text spanning 733 to 774. So here the sea is
+     * anchored to the DOCUMENT instead: it sits exactly on the hero waterline,
+     * the page scrolls past it, and there is one sea rather than two. */
+    var surface = impilato() && ancoraMare
+      ? Math.max(-70, ancoraMare - scrollY)
+      : height * 0.89 - (reduced ? 0 : clamp(scrollY / Math.max(height * 0.82, 1), 0, 1)) * height * 1.04;
     var dark = darkQuery.matches;
 
     makeCanvasPath(surface, 0);
