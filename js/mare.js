@@ -81,7 +81,7 @@
   var sections = [];
   var navLinks = [];
   var choreography = [];
-  var revealObserver = null;
+  var daScoprire = [];   // reveals, driven by scroll position rather than by an observer
 
   var palette = {
     sea: [15, 119, 116],
@@ -221,6 +221,7 @@
       // through the middle of the words.
       if (ribbon.hero) ancoraMare = ribbon.documentY;
     });
+    misuraScoperte();
     updateNavigation(true);
   }
 
@@ -518,6 +519,7 @@
     time += reduced ? 0 : elapsed;
     updateScroll(elapsed);
     updateNavigation(false);
+    controllaScoperte();
 
     if (!reduced) {
       var L = LIVELLI[livello];
@@ -575,17 +577,54 @@
       choreography.push(timeline);
     }
 
-    var revealItems = Array.prototype.slice.call(document.querySelectorAll('main > section:not(.hero) [data-reveal]'));
-    revealItems.forEach(function (element) { gsap.set(element, { opacity: 0, y: 26 }); });
-    revealObserver = new IntersectionObserver(function (entries, observer) {
-      entries.forEach(function (entry) {
-        if (!entry.isIntersecting) return;
-        var tween = gsap.to(entry.target, { opacity: 1, y: 0, duration: 0.68, ease: 'power3.out', clearProps: 'transform,opacity' });
-        choreography.push(tween);
-        observer.unobserve(entry.target);
+    /* The reveals used to be gated by an IntersectionObserver. On iOS its
+     * callbacks are not delivered while a momentum scroll is running: they are
+     * queued and handed over once the page settles. So flicking down the page
+     * showed nothing at all, and then every element that had gone by appeared
+     * at the same instant, a beat after the finger had stopped. That is the
+     * "they all jump after a pause" — it was never the buoys, which were
+     * measured answering the gesture within it.
+     *
+     * They are driven by scroll position instead. The engine already keeps a
+     * frame loop and already knows where it is, so a reveal is just arithmetic
+     * on a cached top edge: it happens on the frame the element crosses the
+     * line, whatever the browser is doing with its observers. */
+    daScoprire = Array.prototype.slice
+      .call(document.querySelectorAll('main > section:not(.hero) [data-reveal]'))
+      .map(function (element) {
+        gsap.set(element, { opacity: 0, y: 26 });
+        return { element: element, documentY: 0 };
       });
-    }, { rootMargin: '0px 0px -9% 0px', threshold: 0.08 });
-    revealItems.forEach(function (element) { revealObserver.observe(element); });
+    misuraScoperte();
+    controllaScoperte();
+  }
+
+  function misuraScoperte() {
+    for (var i = 0; i < daScoprire.length; i++) {
+      var r = daScoprire[i].element.getBoundingClientRect();
+      daScoprire[i].documentY = r.top + (window.scrollY || 0);
+    }
+  }
+
+  /* Cheap enough to run on every frame AND on every scroll event: it is a
+     comparison against a cached number, and it touches no layout. Both, because
+     if the frame loop is ever behind the finger the scroll event is not. */
+  function controllaScoperte() {
+    if (!daScoprire.length || !window.gsap) return;
+    var soglia = (window.scrollY || 0) + height * 0.92;
+    var restano = null;
+    for (var i = 0; i < daScoprire.length; i++) {
+      var v = daScoprire[i];
+      if (v.documentY <= soglia) {
+        choreography.push(window.gsap.to(v.element, {
+          opacity: 1, y: 0, duration: 0.68, ease: 'power3.out',
+          clearProps: 'transform,opacity'
+        }));
+      } else {
+        (restano || (restano = [])).push(v);
+      }
+    }
+    daScoprire = restano || [];
   }
 
   function setupIconChoreography() {
@@ -606,8 +645,17 @@
     tween('.segno .coda > *', { y: -3, duration: 2.6, yoyo: true, repeat: -1, ease: 'sine.inOut', stagger: .38 });
   }
 
+  function scopriTutto() {
+    if (!daScoprire.length) return;
+    for (var i = 0; i < daScoprire.length; i++) {
+      daScoprire[i].element.style.opacity = '';
+      daScoprire[i].element.style.transform = '';
+    }
+    daScoprire = [];
+  }
+
   function stopAnimations() {
-    if (revealObserver) { revealObserver.disconnect(); revealObserver = null; }
+    scopriTutto();   // nothing may be left at opacity 0 when the engine stops
     choreography.forEach(function (animation) { if (animation && animation.kill) animation.kill(); });
     choreography.length = 0;
     if (window.gsap) {
@@ -689,6 +737,22 @@
 
   window.addEventListener('scroll', function () {
     updateNavigation(false);
+    controllaScoperte();
+    /* A safety net for the frames a browser may withhold. iOS Safari can hold
+       back requestAnimationFrame while a momentum scroll is running, and the
+       page then catches up in one lurch once it settles — which looks exactly
+       like the water pausing and then jumping. Scroll events keep arriving
+       throughout that gesture, so if a frame is overdue the step is taken from
+       here instead. On a browser that never starves the loop this condition is
+       simply never true, and nothing extra runs. */
+    if (running && !reduced) {
+      var ora = performance.now();
+      if (ora - lastFrame > 48) {
+        var dt = Math.min((ora - lastFrame) / 1000, 0.12);
+        lastFrame = ora;
+        passo(dt);
+      }
+    }
     if (reduced) {
       scrollY = window.scrollY || 0;
       previousScrollY = scrollY;
